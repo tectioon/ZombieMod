@@ -148,6 +148,9 @@ void ZM_Precache(IEntityResourceManifest* pResourceManifest)
 	// IgnitePawn's burning particle (customio.cpp) - not precached anywhere already, extending it
 	// to molotovs below (previously HE-grenade-only) means it's about to get used a lot more.
 	pResourceManifest->AddResource(g_cvarBurnParticle.Get().String());
+
+	// EMP zombie class item's pulse effect (EconomyShopPlugin, via zm_spawn_particle).
+	pResourceManifest->AddResource("particles/zmbio/default_beam.vpcf");
 }
 
 void ZM_OnLevelInit()
