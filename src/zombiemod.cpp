@@ -2045,7 +2045,7 @@ CON_COMMAND_F(zm_spawn_prop, "<x> <y> <z> <pitch> <yaw> <roll> <model_path> <dur
 	// interaction layer at all, so no mask-based trace can ever report a hit on it.
 	pProp->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
 	if (pProp->m_pCollision())
-		pProp->m_pCollision->m_collisionAttribute.m_nInteractsAs = 0;
+		pProp->m_pCollision->m_collisionAttribute.Get().m_nInteractsAs = 0;
 
 	float flDuration = V_StringToFloat32(args[8], 2.0f);
 	CHandle<CBaseModelEntity> hProp = pProp->GetHandle();
