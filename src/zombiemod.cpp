@@ -2034,7 +2034,18 @@ CON_COMMAND_F(zm_spawn_prop, "<x> <y> <z> <pitch> <yaw> <roll> <model_path> <dur
 	// a model with its own baked-in collision hull would be solid, and a fast-moving trace-based
 	// projectile spawning one of these every tick would end up colliding with its own previous
 	// tick's prop a moment later, detonating instantly instead of actually traveling.
+	//
+	// SetCollisionGroup alone turned out not to be enough: it only affects entity-vs-entity
+	// collision RESPONSE rules (via CollisionRulesChanged), not what a mask-based trace considers
+	// solid. EconomyShopPlugin's rocket wall-detection uses TraceEndShape with
+	// Masks.SolidBrushOnly, which checks each entity's own m_nInteractsAs bits directly - those
+	// stay whatever the model's compiled solid flags were regardless of collision group, so the
+	// rocket kept detonating on its own trail prop (~one tick's travel distance every time)
+	// even after the collision group fix. Zeroing m_nInteractsAs means this prop matches no
+	// interaction layer at all, so no mask-based trace can ever report a hit on it.
 	pProp->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
+	if (pProp->m_pCollision())
+		pProp->m_pCollision->m_collisionAttribute.m_nInteractsAs = 0;
 
 	float flDuration = V_StringToFloat32(args[8], 2.0f);
 	CHandle<CBaseModelEntity> hProp = pProp->GetHandle();
