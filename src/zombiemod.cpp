@@ -2030,31 +2030,21 @@ CON_COMMAND_F(zm_spawn_prop, "<x> <y> <z> <pitch> <yaw> <roll> <model_path> <dur
 	pProp->DispatchSpawn(pPropKeyValues);
 	pProp->Teleport(&origin, &angles, nullptr);
 
-	// Purely cosmetic (e.g. EconomyShopPlugin's traveling Rocket Launcher visual) - without this,
-	// a model with its own baked-in collision hull would be solid, and a fast-moving trace-based
-	// projectile spawning one of these every tick would end up colliding with its own previous
-	// tick's prop a moment later, detonating instantly instead of actually traveling.
+	// Keeps this non-solid for entity-vs-entity collision response (players/other entities won't
+	// bump into or stand on a purely cosmetic prop like the parachute canopy or ice cube effect).
 	//
-	// Two earlier attempts didn't work: SetCollisionGroup alone only affects entity-vs-entity
-	// collision RESPONSE rules, not what a mask-based trace considers solid; zeroing
-	// m_collisionAttribute.m_nInteractsAs directly also had no effect, because
-	// EconomyShopPlugin's rocket wall-detection (TraceEndShape with Masks.SolidBrushOnly) - like
-	// the engine's own IsSolid() helper (sdk/public/const.h) - actually gates on
-	// m_nSolidType/m_usSolidFlags, not the interaction bitmask, and we never called
-	// CollisionRulesChanged() to make the engine re-evaluate after the change anyway. Matching the
-	// proven pattern from the existing setsolidtype admin command (commands.cpp): set
-	// SOLID_NONE and explicitly call CollisionRulesChanged().
+	// NOTE: this does NOT stop a mask-based trace (e.g. EconomyShopPlugin's
+	// Trace.TraceEndShape(..., Masks.SolidBrushOnly), used for the Rocket Launcher's wall
+	// detection) from reporting a hit on this entity. Confirmed by diagnostic readback that
+	// m_nSolidType really is SOLID_NONE (0) on this entity afterwards, yet a trace run the very
+	// next tick still hit it anyway - whatever physics/broadphase representation that trace type
+	// actually queries isn't driven by this schema field (nor by m_collisionAttribute.m_nInteractsAs,
+	// tried earlier - same result). So a fast-moving per-tick trace projectile must NOT spawn one
+	// of these along its own flight path (it will keep self-colliding with its own previous tick's
+	// prop) - EconomyShopPlugin's rocket now uses a particle-only trail instead, like the pulse orb.
 	pProp->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
 	if (pProp->m_pCollision())
-	{
 		pProp->m_pCollision->m_nSolidType = SOLID_NONE;
-		ConMsg("[PropDebug] set SOLID_NONE, readback solidtype=%d flags=%d\n",
-			(int)pProp->m_pCollision->m_nSolidType(), (int)pProp->m_pCollision->m_usSolidFlags());
-	}
-	else
-	{
-		ConMsg("[PropDebug] m_pCollision() was NULL right after DispatchSpawn - could not set SOLID_NONE!\n");
-	}
 	pProp->CollisionRulesChanged();
 
 	float flDuration = V_StringToFloat32(args[8], 2.0f);
