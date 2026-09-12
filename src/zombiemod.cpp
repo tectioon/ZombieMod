@@ -2046,7 +2046,15 @@ CON_COMMAND_F(zm_spawn_prop, "<x> <y> <z> <pitch> <yaw> <roll> <model_path> <dur
 	// SOLID_NONE and explicitly call CollisionRulesChanged().
 	pProp->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
 	if (pProp->m_pCollision())
+	{
 		pProp->m_pCollision->m_nSolidType = SOLID_NONE;
+		ConMsg("[PropDebug] set SOLID_NONE, readback solidtype=%d flags=%d\n",
+			(int)pProp->m_pCollision->m_nSolidType(), (int)pProp->m_pCollision->m_usSolidFlags());
+	}
+	else
+	{
+		ConMsg("[PropDebug] m_pCollision() was NULL right after DispatchSpawn - could not set SOLID_NONE!\n");
+	}
 	pProp->CollisionRulesChanged();
 
 	float flDuration = V_StringToFloat32(args[8], 2.0f);
