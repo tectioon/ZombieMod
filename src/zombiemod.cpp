@@ -2091,6 +2091,43 @@ CON_COMMAND_F(zm_move_prop, "<entity_index> <x> <y> <z> <pitch> <yaw> <roll> - T
 	pRawEnt->Teleport(&origin, &angles, nullptr);
 }
 
+// Parents an already-spawned prop (from zm_spawn_prop) to a player's pawn at a named attachment
+// or bone, so it rides along fully animated (walking, jumping, looking around) via the engine's
+// own bone-merge system - no per-tick repositioning needed at all, unlike zm_move_prop. Built for
+// EconomyShopPlugin's Jetpack model (rigged with a single "spine_3" bone, meant to be worn on a
+// player's back). Uses the exact same AcceptInput("SetParent"/"SetParentAttachment", ...) pattern
+// already proven in leader.cpp (parenting a particle to a weapon's "muzzle_flash" attachment).
+CON_COMMAND_F(zm_attach_prop, "<entity_index> <userid> <attachment_name> - Parent an existing prop to a player", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 4)
+	{
+		ConMsg("zm_attach_prop: usage: zm_attach_prop <entity_index> <userid> <attachment_name>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex < 0)
+		return;
+
+	CBaseEntity* pProp = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pProp)
+	{
+		ConMsg("zm_attach_prop: no entity at index %d\n", iIndex);
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[2], 0)).Get());
+	CCSPlayerPawn* pPawn = pTarget ? pTarget->GetPlayerPawn() : nullptr;
+	if (!pPawn)
+	{
+		ConMsg("zm_attach_prop: no pawn for userid %s\n", args[2]);
+		return;
+	}
+
+	pProp->SetParent(pPawn);
+	pProp->AcceptInput("SetParentAttachment", args[3]);
+}
+
 // Explicitly removes an entity by index - used to make the Rocket Launcher's persistent trail
 // prop (see zm_move_prop above) disappear immediately on detonation, instead of waiting out its
 // original zm_spawn_prop duration and lingering visibly through/after the explosion.
