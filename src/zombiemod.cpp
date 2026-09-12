@@ -2059,6 +2059,57 @@ CON_COMMAND_F(zm_spawn_prop, "<x> <y> <z> <pitch> <yaw> <roll> <model_path> <dur
 	});
 }
 
+// Repositions an entity already spawned by zm_spawn_prop instead of spawning a new one - lets
+// EconomyShopPlugin's Rocket Launcher move ONE persistent trail model each tick instead of
+// creating/destroying a fresh prop every 0.03s. A brand new entity each tick has no interpolation
+// history on the client, so it visually pops from position to position; a single entity moved via
+// Teleport gets the same client-side interpolation as any other networked entity, giving smooth
+// motion between server ticks.
+CON_COMMAND_F(zm_move_prop, "<entity_index> <x> <y> <z> <pitch> <yaw> <roll> - Teleport an existing prop", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 8)
+	{
+		ConMsg("zm_move_prop: usage: zm_move_prop <entity_index> <x> <y> <z> <pitch> <yaw> <roll>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex < 0)
+	{
+		ConMsg("zm_move_prop: invalid entity_index '%s'\n", args[1]);
+		return;
+	}
+
+	CBaseEntity* pRawEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pRawEnt)
+		return;
+
+	Vector origin(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f));
+	QAngle angles(V_StringToFloat32(args[5], 0.0f), V_StringToFloat32(args[6], 0.0f), V_StringToFloat32(args[7], 0.0f));
+
+	pRawEnt->Teleport(&origin, &angles, nullptr);
+}
+
+// Explicitly removes an entity by index - used to make the Rocket Launcher's persistent trail
+// prop (see zm_move_prop above) disappear immediately on detonation, instead of waiting out its
+// original zm_spawn_prop duration and lingering visibly through/after the explosion.
+CON_COMMAND_F(zm_remove_entity, "<entity_index> - Remove an entity", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("zm_remove_entity: missing <entity_index> argument\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex < 0)
+		return;
+
+	CBaseEntity* pRawEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (pRawEnt)
+		pRawEnt->Remove();
+}
+
 // For EconomyShopPlugin's Spitter zombie class ability (acid spit stuns the human it hits). The
 // existing SetFrozen/ZM_FreezePlayer machinery (see ZM_CheckFrozenPlayers/ZM_TriggerFreezeExplosion
 // above) does something similar but is hardcoded to CS_TEAM_T (zombies only, for the freeze
