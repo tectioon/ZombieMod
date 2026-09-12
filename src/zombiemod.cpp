@@ -18,6 +18,7 @@
  */
 
 #include "usermessages.pb.h"
+#include "gameevents.pb.h"
 
 #include "commands.h"
 #include "ctimer.h"
@@ -2108,6 +2109,49 @@ CON_COMMAND_F(zm_remove_entity, "<entity_index> - Remove an entity", FCVAR_SPONL
 	CBaseEntity* pRawEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
 	if (pRawEnt)
 		pRawEnt->Remove();
+}
+
+// Fires a bare Source1LegacyGameEvent (no payload needed) to one specific client - built for
+// EconomyShopPlugin's Exojump/Jetpack HUD icons. The ZMBIO ASSETS addon (already mounted on this
+// server) ships its own Panorama HUD panels for exactly these (panorama/layout/zmbio_hud.xml +
+// zmbio_hud.js, confirmed by decompiling that addon) that GameEvents.Subscribe to
+// "zmbio_exojump_show"/"_hide" and "zmbio_jetpack_show"/"_hide" and toggle a corner icon's
+// visibility - so no Workshop republish is needed, just firing the event this already-mounted
+// addon is listening for. Modeled on CreateHudMessage (hud_manager.cpp) and ZM_InfectShake's
+// CSingleRecipientFilter usage, both already proven in this codebase.
+CON_COMMAND_F(zm_fire_client_event, "<userid> <event_name> - Fire a bare game event to one client", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 3)
+	{
+		ConMsg("zm_fire_client_event: usage: zm_fire_client_event <userid> <event_name>\n");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	if (!pTarget)
+	{
+		ConMsg("zm_fire_client_event: no player for userid %s\n", args[1]);
+		return;
+	}
+
+	IGameEvent* pEvent = g_gameEventManager->CreateEvent(args[2]);
+	if (!pEvent)
+	{
+		ConMsg("zm_fire_client_event: CreateEvent failed for '%s' - event name not registered\n", args[2]);
+		return;
+	}
+
+	INetworkMessageInternal* pMsg = g_pNetworkMessages->FindNetworkMessageById(GE_Source1LegacyGameEvent);
+	if (!pMsg)
+		return;
+
+	CNetMessagePB<CMsgSource1LegacyGameEvent>* data = pMsg->AllocateMessage()->ToPB<CMsgSource1LegacyGameEvent>();
+	g_gameEventManager->SerializeEvent(pEvent, data);
+
+	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pMsg, data, 0);
+
+	delete data;
 }
 
 // For EconomyShopPlugin's Spitter zombie class ability (acid spit stuns the human it hits). The
