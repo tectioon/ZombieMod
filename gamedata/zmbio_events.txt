@@ -1,0 +1,21 @@
+// Declares the custom Panorama HUD events used by EconomyShopPlugin's Exojump/Jetpack items.
+// The ZMBIO ASSETS Workshop addon (already mounted on this server) ships a Custom UI Manifest
+// (panorama/layout/zmbio_hud.xml + zmbio_hud.js) that GameEvents.Subscribe()s to exactly these
+// names and toggles a corner HUD icon - but the engine's IGameEventManager2::CreateEvent() refuses
+// to construct an event whose name has no loaded descriptor (confirmed live:
+// "CreateEvent failed for 'zmbio_exojump_show' - event name not registered"), regardless of
+// whether any client-side script is listening for it. This file gets loaded once via
+// LoadEventsFromFile (see Hook_LoadEventsFromFile in cs2fixes.cpp) so CreateEvent has something to
+// look up. No fields are needed - the client-side handlers only care that the event fired at all.
+"zmbio_exojump_show"
+{
+}
+"zmbio_exojump_hide"
+{
+}
+"zmbio_jetpack_show"
+{
+}
+"zmbio_jetpack_hide"
+{
+}

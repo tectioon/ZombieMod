@@ -128,6 +128,7 @@ for task in MMSPlugin.binaries:
   builder.AddCopy(os.path.join('configs', 'zm', 'hitgroups.cfg.example'), zm_folder)
   builder.AddCopy(os.path.join('configs', 'entwatch', 'maps', 'template.jsonc'), ew_maps_folder)
   builder.AddCopy(os.path.join('gamedata', 'cs2fixes.jsonc'), gamedata_folder)
+  builder.AddCopy(os.path.join('gamedata', 'zmbio_events.txt'), gamedata_folder)
 
   particles_cs2f_folder = builder.AddFolder(os.path.join(packages[sdk_name].sdk_name, 'particles', MMSPlugin.metadata['name']))
   builder.AddCopy(os.path.join('assets', 'particles', MMSPlugin.metadata['name'], 'admin_beacon.vpcf_c'), particles_cs2f_folder)

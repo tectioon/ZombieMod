@@ -1241,9 +1241,25 @@ void CS2Fixes::Hook_DropWeaponPost(CBasePlayerWeapon* pWeapon, Vector* pVecTarge
 	RETURN_META(MRES_IGNORED);
 }
 
+// Declares EconomyShopPlugin's custom "zmbio_exojump_show/hide" and "zmbio_jetpack_show/hide"
+// events (see gamedata/zmbio_events.txt) so IGameEventManager2::CreateEvent() has a descriptor to
+// look up - without this, CreateEvent silently returns null for any event name the engine hasn't
+// loaded a definition for, confirmed live ("CreateEvent failed for 'zmbio_exojump_show' - event
+// name not registered") even though the ZMBIO ASSETS addon's own Panorama HUD is already listening
+// for exactly these names. Piggybacks on the same ExecuteOnce this hook already uses to capture
+// g_gameEventManager, so it only runs once; the LoadEventsFromFile call this makes will re-enter
+// this same hook recursively, but by then the ExecuteOnce guard has already tripped so it just
+// falls through to RETURN_META_VALUE below instead of looping.
+static void LoadZmbioEvents()
+{
+	int result = g_gameEventManager->LoadEventsFromFile("addons/cs2fixes/gamedata/zmbio_events.txt", false);
+	ConMsg("LoadZmbioEvents: LoadEventsFromFile returned %d, HasEventDescriptor(zmbio_jetpack_show)=%d\n",
+		result, (int)g_gameEventManager->HasEventDescriptor("zmbio_jetpack_show"));
+}
+
 int CS2Fixes::Hook_LoadEventsFromFile(const char* filename, bool bSearchAll)
 {
-	ExecuteOnce(g_gameEventManager = META_IFACEPTR(IGameEventManager2));
+	ExecuteOnce((g_gameEventManager = META_IFACEPTR(IGameEventManager2), LoadZmbioEvents()));
 
 	RETURN_META_VALUE(MRES_IGNORED, 0);
 }
