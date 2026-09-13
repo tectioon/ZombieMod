@@ -7,15 +7,18 @@
 // whether any client-side script is listening for it. This file gets loaded once via
 // LoadEventsFromFile (see Hook_LoadEventsFromFile in cs2fixes.cpp) so CreateEvent has something to
 // look up. No fields are needed - the client-side handlers only care that the event fired at all.
-"zmbio_exojump_show"
+"zmbioevents"
 {
-}
-"zmbio_exojump_hide"
-{
-}
-"zmbio_jetpack_show"
-{
-}
-"zmbio_jetpack_hide"
-{
+	"zmbio_exojump_show"
+	{
+	}
+	"zmbio_exojump_hide"
+	{
+	}
+	"zmbio_jetpack_show"
+	{
+	}
+	"zmbio_jetpack_hide"
+	{
+	}
 }
