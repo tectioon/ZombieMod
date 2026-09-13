@@ -2195,6 +2195,46 @@ CON_COMMAND_F(zm_fire_client_event, "<userid> <event_name> - Fire a bare game ev
 	delete data;
 }
 
+// Same as zm_fire_client_event above, but also sets one float field on the event before sending -
+// built for EconomyShopPlugin's Jetpack/Exojump fuel bar HUD, which needs an actual percentage
+// value each update rather than a bare show/hide toggle.
+CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <value> - Fire a game event with one float field to one client", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 5)
+	{
+		ConMsg("zm_fire_client_event_float: usage: zm_fire_client_event_float <userid> <event_name> <field_name> <value>\n");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	if (!pTarget)
+	{
+		ConMsg("zm_fire_client_event_float: no player for userid %s\n", args[1]);
+		return;
+	}
+
+	IGameEvent* pEvent = g_gameEventManager->CreateEvent(args[2], true);
+	if (!pEvent)
+	{
+		ConMsg("zm_fire_client_event_float: CreateEvent failed for '%s' - event not known (bad name?)\n", args[2]);
+		return;
+	}
+
+	pEvent->SetFloat(args[3], V_StringToFloat32(args[4], 0.0f));
+
+	INetworkMessageInternal* pMsg = g_pNetworkMessages->FindNetworkMessageById(GE_Source1LegacyGameEvent);
+	if (!pMsg)
+		return;
+
+	CNetMessagePB<CMsgSource1LegacyGameEvent>* data = pMsg->AllocateMessage()->ToPB<CMsgSource1LegacyGameEvent>();
+	g_gameEventManager->SerializeEvent(pEvent, data);
+
+	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pMsg, data, 0);
+
+	delete data;
+}
+
 // For EconomyShopPlugin's Spitter zombie class ability (acid spit stuns the human it hits). The
 // existing SetFrozen/ZM_FreezePlayer machinery (see ZM_CheckFrozenPlayers/ZM_TriggerFreezeExplosion
 // above) does something similar but is hardcoded to CS_TEAM_T (zombies only, for the freeze

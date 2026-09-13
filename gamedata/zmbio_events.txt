@@ -21,4 +21,12 @@
 	"zmbio_jetpack_hide"
 	{
 	}
+	"zmbio_jetpack_fuel_update"
+	{
+		"percent"		"float"		// 0-100, current jetpack fuel level
+	}
+	"zmbio_exojump_fuel_update"
+	{
+		"percent"		"float"		// 0-100, exojump cooldown readiness
+	}
 }
