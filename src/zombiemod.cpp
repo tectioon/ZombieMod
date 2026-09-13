@@ -2171,10 +2171,14 @@ CON_COMMAND_F(zm_fire_client_event, "<userid> <event_name> - Fire a bare game ev
 		return;
 	}
 
-	IGameEvent* pEvent = g_gameEventManager->CreateEvent(args[2]);
+	// bForce=true is required here: CreateEvent() returns NULL not just for an unknown event name
+	// but also whenever nobody has called AddListener for it - which is always true for these events,
+	// since their only "listener" is the ZMBIO ASSETS addon's client-side Panorama JS, invisible to
+	// the server's listener registry (see igameevents.h's CreateEvent comment).
+	IGameEvent* pEvent = g_gameEventManager->CreateEvent(args[2], true);
 	if (!pEvent)
 	{
-		ConMsg("zm_fire_client_event: CreateEvent failed for '%s' - event name not registered\n", args[2]);
+		ConMsg("zm_fire_client_event: CreateEvent failed for '%s' - event not known (bad name?)\n", args[2]);
 		return;
 	}
 
