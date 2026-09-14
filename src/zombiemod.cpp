@@ -2240,32 +2240,65 @@ CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <v
 	delete data;
 }
 
-// Builds one "LABEL [bar] NN%" line, colored green/yellow/red by percentage, using the same
-// <span color='#RRGGBB'> markup already proven in the infection countdown message (see
-// zombiemod.cpp's ZM_CheckInfectionCountdown). Returns an empty string for a negative percent, so
-// callers can omit a line (e.g. a player who only owns one of Jetpack/Exojump).
+// Builds one "LABEL [bar] NN%" line (plain text, no markup - UM_HudMsg below is the classic
+// Source game_text renderer, not a rich-text label, so per-line color comes from color1/color2
+// instead of an inline <span> like the show_survival_respawn_status message used).
 static std::string BuildFuelBarLine(const char* pszLabel, float flPercent)
 {
-	if (flPercent < 0.0f)
-		return "";
-
 	int iFilled = std::clamp((int)(flPercent / 10.0f + 0.5f), 0, 10);
-	const char* pszColor = flPercent > 60.0f ? "#4CAF50" : (flPercent > 25.0f ? "#FFC107" : "#F44336");
 
 	std::string strBar;
 	for (int i = 0; i < 10; i++)
 		strBar += (i < iFilled) ? "\xE2\x96\xA0" : "\xE2\x96\xA1";
 
 	char szLine[256];
-	V_snprintf(szLine, sizeof(szLine), "%s <span color='%s'>[%s] %d%%</span>", pszLabel, pszColor, strBar.c_str(), (int)(flPercent + 0.5f));
+	V_snprintf(szLine, sizeof(szLine), "%s [%s] %d%%", pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
 	return szLine;
 }
 
-// Shows the Jetpack/Exojump fuel bars via CS2Fixes' existing native HUD message system
-// (SendHudMessage/show_survival_respawn_status, see hud_manager.cpp) instead of the abandoned
-// Panorama panel above - this is a built-in engine HUD element CS2Fixes already knows how to
-// drive, so it needs no Workshop content at all. Pass -1 for either percent to omit that line
-// (e.g. a player who's only bought one of the two).
+static uint32 FuelBarColor(float flPercent)
+{
+	if (flPercent > 60.0f)
+		return 0x4CAF50FF; // green
+	if (flPercent > 25.0f)
+		return 0xFFC107FF; // yellow
+	return 0xF44336FF; // red
+}
+
+// Sends one line of text via UM_HudMsg (CUserMessageHudMsg, see usermessages.proto) - the classic
+// Source "game_text" positionable HUD message, with its own x/y (0-1 normalized, -1 = centered on
+// that axis) and color, on its own channel so multiple lines don't overwrite each other. Used
+// instead of the fixed-position show_survival_respawn_status panel (see BuildFuelBarLine above)
+// specifically because that panel's position clashed with other on-screen menus and can't be
+// moved; a distinct channel/position here avoids that entirely, still with no Workshop content
+// needed at all.
+static void SendFuelHudLine(CCSPlayerController* pTarget, uint32 nChannel, float flY, float flPercent, const char* pszLabel)
+{
+	if (flPercent < 0.0f)
+		return;
+
+	INetworkMessageInternal* pMsg = g_pNetworkMessages->FindNetworkMessageById(UM_HudMsg);
+	if (!pMsg)
+		return;
+
+	CNetMessagePB<CUserMessageHudMsg>* data = pMsg->AllocateMessage()->ToPB<CUserMessageHudMsg>();
+	data->set_channel(nChannel);
+	data->set_x(-1.0f);
+	data->set_y(flY);
+	data->set_color1(FuelBarColor(flPercent));
+	data->set_color2(FuelBarColor(flPercent));
+	data->set_effect(0);
+	data->set_message(BuildFuelBarLine(pszLabel, flPercent));
+
+	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pMsg, data, 0);
+
+	delete data;
+}
+
+// Shows the Jetpack/Exojump fuel bars via the native UM_HudMsg mechanism (see SendFuelHudLine
+// above) - no Workshop content needed at all. Pass -1 for either percent to omit that line (e.g.
+// a player who's only bought one of the two, or isn't currently using it).
 CON_COMMAND_F(zm_send_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|-1> - Show jetpack/exojump fuel bars", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 4)
@@ -2278,22 +2311,8 @@ CON_COMMAND_F(zm_send_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|
 	if (!pTarget)
 		return;
 
-	ZEPlayer* pPlayer = pTarget->GetZEPlayer();
-	if (!pPlayer)
-		return;
-
-	std::string strJetpack = BuildFuelBarLine("JETPACK FUEL", V_StringToFloat32(args[2], -1.0f));
-	std::string strExojump = BuildFuelBarLine("EXOJUMP", V_StringToFloat32(args[3], -1.0f));
-
-	std::string strMsg = strJetpack;
-	if (!strJetpack.empty() && !strExojump.empty())
-		strMsg += "<br>";
-	strMsg += strExojump;
-
-	if (strMsg.empty())
-		return;
-
-	SendHudMessage(pPlayer, 1, EHudPriority::JetpackFuel, "%s", strMsg.c_str());
+	SendFuelHudLine(pTarget, 4, 0.78f, V_StringToFloat32(args[2], -1.0f), "JETPACK FUEL");
+	SendFuelHudLine(pTarget, 5, 0.82f, V_StringToFloat32(args[3], -1.0f), "EXOJUMP");
 }
 
 // For EconomyShopPlugin's Spitter zombie class ability (acid spit stuns the human it hits). The
