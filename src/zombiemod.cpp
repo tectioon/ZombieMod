@@ -1339,9 +1339,14 @@ void ZM_FreezePlayer(ZEPlayer* pPlayer, CCSPlayerController* pController, bool f
 
 	if (freeze)
 	{
-		velocity.x = -999999;
-		velocity.y = -999999;
-		velocity.z = -999999;
+		// Zero, not a huge sentinel value - MOVETYPE_NONE already fully blocks translation
+		// regardless of velocity, but the animation/locomotion state machine that drives footstep
+		// sounds reads this same velocity independently of MoveType, so a large magnitude here kept
+		// it blending into a running animation (and firing footstep sounds) even while the player
+		// visibly stood frozen in place.
+		velocity.x = 0;
+		velocity.y = 0;
+		velocity.z = 0;
 
 		pPawn->SetAbsVelocity(velocity);
 		pPawn->m_vecAbsVelocity() = velocity;
@@ -2255,19 +2260,21 @@ static std::string BuildFuelBarLine(const char* pszLabel, float flPercent)
 
 	int iFilled = std::clamp((int)(flPercent / 10.0f + 0.5f), 0, 10);
 
-	// The \x07RRGGBB custom-hex color code (used in SayText2 chat messages) does NOT work here -
-	// confirmed live, it prints the literal hex digits as visible text. This TextMsg/HUD_PRINTCENTER
-	// channel doesn't have a proven color scheme in this codebase, so this reuses the single-byte
-	// codes already confirmed elsewhere (\x04 in the chat "[Shop]" prefix, \x06 for chat highlights) -
-	// unlike \x07, an unsupported single byte just gets stripped/ignored instead of leaking garbage.
-	const char* pszColorCode = flPercent > 60.0f ? "\x04" : (flPercent > 25.0f ? "\x06" : "\x02");
+	// Two different SayText2-style control-byte schemes (\x07RRGGBB, then single bytes \x04/\x06/
+	// \x02) were both confirmed NOT to work on this TextMsg/HUD_PRINTCENTER channel - the first
+	// leaked literal hex digits as visible text, the second rendered no color at all. EconomyShop's
+	// own TryFireRocketLauncher already uses player.PrintToCenterHtml("<font color='#FF4444'>...")
+	// for "Out of rockets!" on this exact same HUD_PRINTCENTER destination, which strongly suggests
+	// this channel's renderer is HTML-based (matching CS2's Panorama-flavored UI), not the legacy
+	// Source 1 control-byte scheme - so this now uses the same <font color> markup instead.
+	const char* pszColorHex = flPercent > 60.0f ? "#4CAF50" : (flPercent > 25.0f ? "#FFC107" : "#F44336");
 
 	std::string strBar;
 	for (int i = 0; i < 10; i++)
 		strBar += (i < iFilled) ? "\xE2\x96\xA0" : "\xE2\x96\xA1";
 
 	char szLine[300];
-	V_snprintf(szLine, sizeof(szLine), "%s%s  [%s]  %d%%\x01", pszColorCode, pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
+	V_snprintf(szLine, sizeof(szLine), "<font color='%s'>%s  [%s]  %d%%</font>", pszColorHex, pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
 	return szLine;
 }
 
