@@ -2254,26 +2254,32 @@ static std::string BuildFuelBarLine(const char* pszLabel, float flPercent)
 		return "";
 
 	int iFilled = std::clamp((int)(flPercent / 10.0f + 0.5f), 0, 10);
-	const char* pszColorHex = flPercent > 60.0f ? "4CAF50" : (flPercent > 25.0f ? "FFC107" : "F44336");
+
+	// The \x07RRGGBB custom-hex color code (used in SayText2 chat messages) does NOT work here -
+	// confirmed live, it prints the literal hex digits as visible text. This TextMsg/HUD_PRINTCENTER
+	// channel doesn't have a proven color scheme in this codebase, so this reuses the single-byte
+	// codes already confirmed elsewhere (\x04 in the chat "[Shop]" prefix, \x06 for chat highlights) -
+	// unlike \x07, an unsupported single byte just gets stripped/ignored instead of leaking garbage.
+	const char* pszColorCode = flPercent > 60.0f ? "\x04" : (flPercent > 25.0f ? "\x06" : "\x02");
 
 	std::string strBar;
 	for (int i = 0; i < 10; i++)
 		strBar += (i < iFilled) ? "\xE2\x96\xA0" : "\xE2\x96\xA1";
 
 	char szLine[300];
-	V_snprintf(szLine, sizeof(szLine), "\x07%s%s  [%s]  %d%%\x01", pszColorHex, pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
+	V_snprintf(szLine, sizeof(szLine), "%s%s  [%s]  %d%%\x01", pszColorCode, pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
 	return szLine;
 }
 
-// Shows the Jetpack/Exojump fuel bars via ClientPrint(..., HUD_PRINTCENTER, ...) - the same
-// already-proven native text mechanism !getstats uses (see commands.cpp) - instead of the
+// Shows the Jetpack/Exojump/Rocket Launcher bars via ClientPrint(..., HUD_PRINTCENTER, ...) - the
+// same already-proven native text mechanism !getstats uses (see commands.cpp) - instead of the
 // fixed-position show_survival_respawn_status panel or the unproven UM_HudMsg usermessage this
-// replaced. No Workshop content needed at all. Pass -1 for either percent to omit that line.
-CON_COMMAND_F(zm_send_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|-1> - Show jetpack/exojump fuel bars", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+// replaced. No Workshop content needed at all. Pass -1 for any percent to omit that line.
+CON_COMMAND_F(zm_send_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|-1> <rocket_percent|-1> - Show jetpack/exojump/rocket bars", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
-	if (args.ArgC() < 4)
+	if (args.ArgC() < 5)
 	{
-		ConMsg("zm_send_fuel_hud: usage: zm_send_fuel_hud <userid> <jetpack_percent|-1> <exojump_percent|-1>\n");
+		ConMsg("zm_send_fuel_hud: usage: zm_send_fuel_hud <userid> <jetpack_percent|-1> <exojump_percent|-1> <rocket_percent|-1>\n");
 		return;
 	}
 
@@ -2283,11 +2289,18 @@ CON_COMMAND_F(zm_send_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|
 
 	std::string strJetpack = BuildFuelBarLine("JETPACK FUEL", V_StringToFloat32(args[2], -1.0f));
 	std::string strExojump = BuildFuelBarLine("EXOJUMP", V_StringToFloat32(args[3], -1.0f));
+	std::string strRocket = BuildFuelBarLine("ROCKET", V_StringToFloat32(args[4], -1.0f));
 
-	std::string strMsg = strJetpack;
-	if (!strJetpack.empty() && !strExojump.empty())
-		strMsg += "\n";
-	strMsg += strExojump;
+	std::string strMsg;
+	for (const std::string& strLine : {strJetpack, strExojump, strRocket})
+	{
+		if (strLine.empty())
+			continue;
+
+		if (!strMsg.empty())
+			strMsg += "\n";
+		strMsg += strLine;
+	}
 
 	if (strMsg.empty())
 		return;
