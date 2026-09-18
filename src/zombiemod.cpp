@@ -2241,23 +2241,27 @@ CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <v
 	delete data;
 }
 
-// Builds one "LABEL [bar] NN%" line (plain text - ClientPrint/HUD_PRINTCENTER below is the same
-// plain game_text renderer used by e.g. !getstats, not a rich-text label, so no inline color
-// markup here). Returns an empty string for a negative percent, so callers can omit a line (e.g.
-// a player who only owns one of Jetpack/Exojump, or isn't currently using it).
+// Builds one "LABEL [bar] NN%" line, colored green/yellow/red by percentage via the \x07RRGGBB
+// custom-color control code (the same byte-code color system used for chat elsewhere in this
+// codebase, e.g. EconomyShopPlugin's "\x06Jetpack\x01") - unverified whether HUD_PRINTCENTER
+// actually respects it (no existing use of color codes there to confirm either way, see
+// !getstats in commands.cpp), so this needs a live check. Returns an empty string for a negative
+// percent, so callers can omit a line (e.g. a player who only owns one of Jetpack/Exojump, or
+// isn't currently using it).
 static std::string BuildFuelBarLine(const char* pszLabel, float flPercent)
 {
 	if (flPercent < 0.0f)
 		return "";
 
 	int iFilled = std::clamp((int)(flPercent / 10.0f + 0.5f), 0, 10);
+	const char* pszColorHex = flPercent > 60.0f ? "4CAF50" : (flPercent > 25.0f ? "FFC107" : "F44336");
 
 	std::string strBar;
 	for (int i = 0; i < 10; i++)
 		strBar += (i < iFilled) ? "\xE2\x96\xA0" : "\xE2\x96\xA1";
 
-	char szLine[256];
-	V_snprintf(szLine, sizeof(szLine), "%s [%s] %d%%", pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
+	char szLine[300];
+	V_snprintf(szLine, sizeof(szLine), "\x07%s%s  [%s]  %d%%\x01", pszColorHex, pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
 	return szLine;
 }
 
