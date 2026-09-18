@@ -18,6 +18,7 @@
  */
 
 #include "usermessages.pb.h"
+#include "cstrike15_usermessages.pb.h"
 #include "gameevents.pb.h"
 
 #include "commands.h"
@@ -2244,6 +2245,80 @@ CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <v
 	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pMsg, data, 0);
 
 	delete data;
+}
+
+// Experimental: a positionable, colored HUD text message (unlike ClientPrint/HUD_PRINTCENTER,
+// which is always fixed-center and doesn't support color - see BuildFuelBarHtmlLine in
+// EconomyShopPlugin.cs for the reliable, but unpositionable, alternative). An earlier attempt at
+// this (long since removed) produced zero visible output with no error - cast blindly to the
+// generic engine CUserMessageHudMsg (usermessages.pb.h), which has no hold_time field at all, so
+// the client had no duration to display it for. CS2 also has a CS-specific CCSUsrMsg_HudMsg
+// (cstrike15_usermessages.pb.h, CS_UM_HudMsg=308) with proper fade_in/fade_out/hold_time fields,
+// which is likely what's actually needed - but ToPB<T>() is a blind static_cast with "no validity
+// checks" (see netmessage.h), so casting to the wrong one would corrupt memory instead of failing
+// cleanly. This checks the resolved message's real ID first via GetNetMessageInfo and only then
+// casts to whichever type actually matches, instead of guessing.
+CON_COMMAND_F(zm_test_positioned_hud, "<userid> <x> <y> <message> - Experimental positioned/colored HUD text", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 5)
+	{
+		ConMsg("zm_test_positioned_hud: usage: zm_test_positioned_hud <userid> <x> <y> <message>\n");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	if (!pTarget)
+		return;
+
+	float flX = V_StringToFloat32(args[2], -1.0f);
+	float flY = V_StringToFloat32(args[3], 0.5f);
+
+	INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("HudMsg");
+	if (!pNetMsg)
+	{
+		ConMsg("zm_test_positioned_hud: FindNetworkMessagePartial(\"HudMsg\") found nothing\n");
+		return;
+	}
+
+	NetMessageInfo_t* pInfo = g_pNetworkMessages->GetNetMessageInfo(pNetMsg);
+	int iMsgId = pInfo ? (int)pInfo->m_MessageId : -1;
+	ConMsg("zm_test_positioned_hud: resolved \"HudMsg\" to message ID %d (CS_UM_HudMsg=308, generic UM_HudMsg=110)\n", iMsgId);
+
+	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
+
+	if (iMsgId == CS_UM_HudMsg)
+	{
+		CNetMessagePB<CCSUsrMsg_HudMsg>* data = pNetMsg->AllocateMessage()->ToPB<CCSUsrMsg_HudMsg>();
+		data->set_channel(1);
+		data->mutable_pos()->set_x(flX);
+		data->mutable_pos()->set_y(flY);
+		data->mutable_clr1()->set_r(255);
+		data->mutable_clr1()->set_g(255);
+		data->mutable_clr1()->set_b(255);
+		data->mutable_clr1()->set_a(255);
+		data->set_effect(0);
+		data->set_fade_in_time(0.0f);
+		data->set_fade_out_time(0.0f);
+		data->set_hold_time(5.0f);
+		data->set_text(args[4]);
+
+		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
+		delete data;
+	}
+	else
+	{
+		CNetMessagePB<CUserMessageHudMsg>* data = pNetMsg->AllocateMessage()->ToPB<CUserMessageHudMsg>();
+		data->set_channel(1);
+		data->set_x(flX);
+		data->set_y(flY);
+		data->set_color1(0xFFFFFFFF);
+		data->set_color2(0xFFFFFFFF);
+		data->set_effect(0);
+		data->set_message(args[4]);
+
+		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
+		delete data;
+	}
 }
 
 // For EconomyShopPlugin's Spitter zombie class ability (acid spit stuns the human it hits). The
