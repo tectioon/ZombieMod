@@ -2247,60 +2247,45 @@ CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <v
 	delete data;
 }
 
-// Experimental: a positionable, colored HUD text message (unlike ClientPrint/HUD_PRINTCENTER,
-// which is always fixed-center and doesn't support color - see BuildFuelBarHtmlLine in
-// EconomyShopPlugin.cs for the reliable, but unpositionable, alternative). An earlier attempt at
-// this (long since removed) produced zero visible output with no error - cast blindly to the
-// generic engine CUserMessageHudMsg (usermessages.pb.h), which has no hold_time field at all, so
-// the client had no duration to display it for. CS2 also has a CS-specific CCSUsrMsg_HudMsg
+// Sends one positioned, colored HUD text line via UM_HudMsg - unlike ClientPrint/HUD_PRINTCENTER
+// or PrintToCenterHtml (see BuildFuelBarHtmlLine in EconomyShopPlugin.cs), which are always the
+// fixed native center panel and can't be moved. An earlier attempt at this (long since removed)
+// produced zero visible output with no error - it cast blindly to the generic engine
+// CUserMessageHudMsg (usermessages.pb.h), which has no hold_time field at all, so the client had
+// no duration to display it for. CS2 also registers a CS-specific CCSUsrMsg_HudMsg
 // (cstrike15_usermessages.pb.h, CS_UM_HudMsg=308) with proper fade_in/fade_out/hold_time fields,
 // which is likely what's actually needed - but ToPB<T>() is a blind static_cast with "no validity
 // checks" (see netmessage.h), so casting to the wrong one would corrupt memory instead of failing
-// cleanly. This checks the resolved message's real ID first via GetNetMessageInfo and only then
-// casts to whichever type actually matches, instead of guessing.
-CON_COMMAND_F(zm_test_positioned_hud, "<userid> <x> <y> <message> - Experimental positioned/colored HUD text", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+// cleanly. This checks the resolved message's real ID via GetNetMessageInfo first and only then
+// casts to whichever type actually matches, instead of guessing. UM_HudMsg has no HTML/rich-text
+// support (it's the classic single-color "game_text"), so the whole line is one color - unlike
+// PrintToCenterHtml, only the bar segments can't be tinted separately from the label here.
+static void SendPositionedHudLine(CCSPlayerController* pTarget, int iChannel, float flY, const char* pszText, byte r, byte g, byte b)
 {
-	if (args.ArgC() < 5)
-	{
-		ConMsg("zm_test_positioned_hud: usage: zm_test_positioned_hud <userid> <x> <y> <message>\n");
-		return;
-	}
-
-	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
-	if (!pTarget)
-		return;
-
-	float flX = V_StringToFloat32(args[2], -1.0f);
-	float flY = V_StringToFloat32(args[3], 0.5f);
-
 	INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("HudMsg");
 	if (!pNetMsg)
-	{
-		ConMsg("zm_test_positioned_hud: FindNetworkMessagePartial(\"HudMsg\") found nothing\n");
 		return;
-	}
 
 	NetMessageInfo_t* pInfo = g_pNetworkMessages->GetNetMessageInfo(pNetMsg);
 	int iMsgId = pInfo ? (int)pInfo->m_MessageId : -1;
-	ConMsg("zm_test_positioned_hud: resolved \"HudMsg\" to message ID %d (CS_UM_HudMsg=308, generic UM_HudMsg=110)\n", iMsgId);
 
 	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
 
 	if (iMsgId == CS_UM_HudMsg)
 	{
 		CNetMessagePB<CCSUsrMsg_HudMsg>* data = pNetMsg->AllocateMessage()->ToPB<CCSUsrMsg_HudMsg>();
-		data->set_channel(1);
-		data->mutable_pos()->set_x(flX);
+		data->set_channel(iChannel);
+		data->mutable_pos()->set_x(-1.0f);
 		data->mutable_pos()->set_y(flY);
-		data->mutable_clr1()->set_r(255);
-		data->mutable_clr1()->set_g(255);
-		data->mutable_clr1()->set_b(255);
+		data->mutable_clr1()->set_r(r);
+		data->mutable_clr1()->set_g(g);
+		data->mutable_clr1()->set_b(b);
 		data->mutable_clr1()->set_a(255);
 		data->set_effect(0);
 		data->set_fade_in_time(0.0f);
 		data->set_fade_out_time(0.0f);
-		data->set_hold_time(5.0f);
-		data->set_text(args[4]);
+		data->set_hold_time(1.0f);
+		data->set_text(pszText);
 
 		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
 		delete data;
@@ -2308,16 +2293,65 @@ CON_COMMAND_F(zm_test_positioned_hud, "<userid> <x> <y> <message> - Experimental
 	else
 	{
 		CNetMessagePB<CUserMessageHudMsg>* data = pNetMsg->AllocateMessage()->ToPB<CUserMessageHudMsg>();
-		data->set_channel(1);
-		data->set_x(flX);
+		data->set_channel(iChannel);
+		data->set_x(-1.0f);
 		data->set_y(flY);
-		data->set_color1(0xFFFFFFFF);
-		data->set_color2(0xFFFFFFFF);
+		data->set_color1((uint32)r << 24 | (uint32)g << 16 | (uint32)b << 8 | 0xFF);
+		data->set_color2((uint32)r << 24 | (uint32)g << 16 | (uint32)b << 8 | 0xFF);
 		data->set_effect(0);
-		data->set_message(args[4]);
+		data->set_message(pszText);
 
 		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
 		delete data;
+	}
+}
+
+static std::string BuildPlainFuelBarLine(const char* pszLabel, float flPercent)
+{
+	int iFilled = std::clamp((int)(flPercent / 10.0f + 0.5f), 0, 10);
+
+	std::string strBar;
+	for (int i = 0; i < 10; i++)
+		strBar += (i < iFilled) ? "\xE2\x96\xA0" : "\xE2\x96\xA1";
+
+	char szLine[300];
+	V_snprintf(szLine, sizeof(szLine), "%s  [%s]  %d%%", pszLabel, strBar.c_str(), (int)(flPercent + 0.5f));
+	return szLine;
+}
+
+// Positioned equivalent of the removed zm_send_fuel_hud (see BuildFuelBarHtmlLine in
+// EconomyShopPlugin.cs for the fixed-center, HTML-colored version this sits alongside). Each
+// ability gets its own fixed row (channel 1/2/3, a bit further down each time) and its own tier
+// color for the whole line, so omitting one when a player doesn't own it just leaves that row
+// blank instead of shifting the others. Pass -1 for any percent to omit that line.
+CON_COMMAND_F(zm_send_positioned_fuel_hud, "<userid> <jetpack_percent|-1> <exojump_percent|-1> <rocket_percent|-1> - Positioned jetpack/exojump/rocket bars", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 5)
+	{
+		ConMsg("zm_send_positioned_fuel_hud: usage: zm_send_positioned_fuel_hud <userid> <jetpack_percent|-1> <exojump_percent|-1> <rocket_percent|-1>\n");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	if (!pTarget)
+		return;
+
+	const char* const pszLabels[3] = {"JETPACK FUEL", "EXOJUMP", "ROCKET"};
+	const float flPercents[3] = {V_StringToFloat32(args[2], -1.0f), V_StringToFloat32(args[3], -1.0f), V_StringToFloat32(args[4], -1.0f)};
+	const float flRowY[3] = {0.65f, 0.70f, 0.75f};
+
+	for (int i = 0; i < 3; i++)
+	{
+		if (flPercents[i] < 0.0f)
+			continue;
+
+		std::string strLine = BuildPlainFuelBarLine(pszLabels[i], flPercents[i]);
+		byte r, g, b;
+		if (flPercents[i] > 60.0f) { r = 0x4C; g = 0xAF; b = 0x50; }
+		else if (flPercents[i] > 25.0f) { r = 0xFF; g = 0xC1; b = 0x07; }
+		else { r = 0xF4; g = 0x43; b = 0x36; }
+
+		SendPositionedHudLine(pTarget, i + 1, flRowY[i], strLine.c_str(), r, g, b);
 	}
 }
 
