@@ -2262,13 +2262,25 @@ CON_COMMAND_F(zm_fire_client_event_float, "<userid> <event_name> <field_name> <v
 // PrintToCenterHtml, only the bar segments can't be tinted separately from the label here.
 static void SendPositionedHudLine(CCSPlayerController* pTarget, int iChannel, float flY, const char* pszText, byte r, byte g, byte b)
 {
-	INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("HudMsg");
+	// FindNetworkMessagePartial("HudMsg") always resolves to the generic engine UM_HudMsg (110) in
+	// this build, never the CS-specific CS_UM_HudMsg (308) - confirmed live via the ConMsg below,
+	// three attempts in a row. The generic proto has no fade/hold_time fields at all, so it likely
+	// has no way to tell the client how long to display text for. Look the CS-specific one up by
+	// its exact ID directly instead of relying on the ambiguous partial-name match, so it actually
+	// gets a chance to be used if it's registered at all.
+	INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessageById(CS_UM_HudMsg);
+	bool bUsingCSSpecific = pNetMsg != nullptr;
 	if (!pNetMsg)
+		pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("HudMsg");
+	if (!pNetMsg)
+	{
+		ConMsg("SendPositionedHudLine: no HudMsg network message found at all (neither ID 308 nor partial match)\n");
 		return;
+	}
 
 	NetMessageInfo_t* pInfo = g_pNetworkMessages->GetNetMessageInfo(pNetMsg);
 	int iMsgId = pInfo ? (int)pInfo->m_MessageId : -1;
-	ConMsg("SendPositionedHudLine: resolved \"HudMsg\" to message ID %d (CS_UM_HudMsg=308, generic UM_HudMsg=110)\n", iMsgId);
+	ConMsg("SendPositionedHudLine: using message ID %d (CS_UM_HudMsg=308, generic UM_HudMsg=110), found via %s\n", iMsgId, bUsingCSSpecific ? "FindNetworkMessageById(308)" : "FindNetworkMessagePartial fallback");
 
 	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
 
