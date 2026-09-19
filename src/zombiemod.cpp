@@ -2268,6 +2268,7 @@ static void SendPositionedHudLine(CCSPlayerController* pTarget, int iChannel, fl
 
 	NetMessageInfo_t* pInfo = g_pNetworkMessages->GetNetMessageInfo(pNetMsg);
 	int iMsgId = pInfo ? (int)pInfo->m_MessageId : -1;
+	ConMsg("SendPositionedHudLine: resolved \"HudMsg\" to message ID %d (CS_UM_HudMsg=308, generic UM_HudMsg=110)\n", iMsgId);
 
 	CSingleRecipientFilter filter(pTarget->GetPlayerSlot());
 
@@ -2282,9 +2283,13 @@ static void SendPositionedHudLine(CCSPlayerController* pTarget, int iChannel, fl
 		data->mutable_clr1()->set_b(b);
 		data->mutable_clr1()->set_a(255);
 		data->set_effect(0);
-		data->set_fade_in_time(0.0f);
-		data->set_fade_out_time(0.0f);
-		data->set_hold_time(1.0f);
+		// A ZERO fade-in time was the only real difference from the working precedent
+		// (ClientPrint's CUserMessageTextMsg has no such field at all) - if the client's fade
+		// curve never resolves a 0-duration fade to "fully visible", this alone could explain the
+		// previous zero-output result. Small nonzero fade in/out instead.
+		data->set_fade_in_time(0.15f);
+		data->set_fade_out_time(0.15f);
+		data->set_hold_time(1.2f);
 		data->set_text(pszText);
 
 		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
