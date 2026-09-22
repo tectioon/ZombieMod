@@ -148,6 +148,14 @@ void ZM_Precache(IEntityResourceManifest* pResourceManifest)
 	// core one needs precaching here.
 	pResourceManifest->AddResource("particles/liroy_particles/explosion_freeze_core.vpcf");
 
+	// Ethereal Rifle's traveling shot effect (EconomyShopPlugin's FireEtherealTracer/
+	// EtherealTracerTick, via zm_spawn_particle every tick) - a small static green glow sprite,
+	// authored fresh in this server's own frostg addon (content/csgo_addons/frostg/particles/
+	// ethereal_orb.vpcf, compiled via resourcecompiler.exe) after reusing Spitter's acid particle
+	// looked wrong here (that one has its own built-in scatter/decay behavior baked in, meant for
+	// a splash effect, not a clean traveling dot).
+	pResourceManifest->AddResource("particles/ethereal_orb.vpcf");
+
 	// Spitter zombie class ability's acid spit effects (EconomyShopPlugin, via zm_spawn_particle) -
 	// spitter_acid is the original hit effect, no longer used directly but left precached in case
 	// it comes back; part10_acid2/part10_acid2_burst are the travel-trail + impact-burst pair
