@@ -1993,6 +1993,57 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 	});
 }
 
+// Single colored env_beam between two points, briefly shown then removed - same underlying
+// mechanism as ZM_DrawLaserBetween (LaserMine's tripwire beam) but with the color and a single
+// start/end pair exposed as arguments, instead of ZM_DrawLaserBetween's fixed cyan and vector-of-
+// multiple-simultaneous-beams shape (which stays as-is for LaserMine; not touched here). For
+// EconomyShopPlugin's Ethereal Rifle - a per-shot muzzle flash type trail, colored green,
+// deliberately NOT done via the native weapon tracer (m_szTracerParticle in weapons.vdata) since
+// that's a per-weapon-CLASSNAME setting, not per-entity - it would have colored every weapon_ak47
+// server-wide (including the plain one from !guns), not just this specific reskinned one.
+CON_COMMAND_F(zm_fire_tracer, "<startX> <startY> <startZ> <endX> <endY> <endZ> <r> <g> <b> <duration> - Show a short colored beam between two points", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 11)
+		return;
+
+	Vector start(V_StringToFloat32(args[1], 0.0f), V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f));
+	Vector end(V_StringToFloat32(args[4], 0.0f), V_StringToFloat32(args[5], 0.0f), V_StringToFloat32(args[6], 0.0f));
+	int r = V_StringToInt32(args[7], 0);
+	int g = V_StringToInt32(args[8], 255);
+	int b = V_StringToInt32(args[9], 0);
+	float flDuration = V_StringToFloat32(args[10], 0.1f);
+
+	auto* beam = CreateEntityByName<CBeam>("env_beam");
+	if (!beam)
+		return;
+
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	Color col(r, g, b);
+	char szColor[32];
+	V_snprintf(szColor, sizeof(szColor), "%d %d %d", r, g, b);
+	pKeyValues->SetString("rendercolor", szColor);
+	pKeyValues->SetString("width", "1.5");
+	pKeyValues->SetInt("renderamt", 255);
+	pKeyValues->SetInt("HDRColorScale", 3);
+	pKeyValues->SetInt("spawnflags", 1);
+	beam->m_clrRender() = col;
+	beam->m_fWidth() = 1.5f;
+	beam->m_bTurnedOff() = false;
+	beam->m_nBeamFlags() = 512;
+	beam->DispatchSpawn(pKeyValues);
+	beam->Teleport(&start, nullptr, nullptr);
+	beam->m_vecEndPos() = end;
+
+	CHandle<CBeam> hBeam = beam->GetHandle();
+	CTimer::Create(flDuration, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hBeam]() {
+		CBeam* pBeam = hBeam.Get();
+		if (pBeam)
+			addresses::UTIL_Remove(pBeam);
+
+		return -1.0f;
+	});
+}
+
 // For EconomyShopPlugin's Pulse Rifle orb, which has no real entity to call EmitSound on (it's a
 // plugin-side simulated projectile, not a spawned game entity) - spawns an invisible info_target
 // at the position just to anchor a positioned EmitSound call, same short-lived CHandle+CTimer
