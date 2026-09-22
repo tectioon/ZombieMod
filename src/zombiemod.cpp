@@ -136,6 +136,13 @@ void ZM_Precache(IEntityResourceManifest* pResourceManifest)
 	// SetModel call on an already-live entity at throw time.
 	pResourceManifest->AddResource("weapons/models/freeze_grenade/freeze_grenade.vmdl");
 
+	// Ethereal Rifle reskin for weapon_ak47 (EconomyShopPlugin's BuyEtherealRifle), set via
+	// zm_set_entity_model on the live weapon entity right after GiveNamedItem - same "not
+	// automatically precached just by being SetModel'd onto a live entity" gotcha as the freeze
+	// grenade above. From the ZMBIO ASSETS Workshop addon (cross-pack reference, not this server's
+	// own frostg addon).
+	pResourceManifest->AddResource("weapons/models/rif_ethereal/v_ethereal_new.vmdl");
+
 	// Freeze grenade explosion effect (see ZM_TriggerFreezeExplosion) - the compiled particle
 	// already references explosion_freeze_distort/flakes/trails.vpcf as children, so only the
 	// core one needs precaching here.
