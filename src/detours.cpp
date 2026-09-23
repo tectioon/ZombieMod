@@ -973,13 +973,27 @@ bool FASTCALL Detour_IsCommandWhitelisted(void* pAddonManager, const char* pszCo
 	return g_pConvarWhitelist->IsWhitelisted(pszCommandName);
 }
 
+// Detours whose absence shouldn't block the whole plugin from loading - CreateDetour failing for
+// any of these is logged (via CreateDetour's own Panic call) but doesn't fail InitDetours overall.
+// CCSPlayer_WeaponServices_CanUse: only used by EntWatch's weapon-use tracking (see
+// Detour_CCSPlayer_WeaponServices_CanUse/EW_Detour_CCSPlayer_WeaponServices_CanUse), not core
+// gameplay - confirmed live on 2026-09-23 that this specific signature (byte-identical to
+// upstream's own post-2026-09-22-update pattern) still doesn't resolve on this host even though
+// every other signature in the same gamedata refresh does, for reasons not yet understood. Making
+// this one non-fatal keeps the server running rather than fully refusing to load CS2Fixes over one
+// optional diagnostic hook.
+static bool IsOptionalDetour(const char* pszName)
+{
+	return V_stricmp(pszName, "CCSPlayer_WeaponServices_CanUse") == 0;
+}
+
 bool InitDetours(CGameConfig* gameConfig)
 {
 	bool success = true;
 
 	FOR_EACH_VEC(g_vecDetours, i)
 	{
-		if (!g_vecDetours[i]->CreateDetour(gameConfig))
+		if (!g_vecDetours[i]->CreateDetour(gameConfig) && !IsOptionalDetour(g_vecDetours[i]->GetName()))
 			success = false;
 
 		g_vecDetours[i]->EnableDetour();
