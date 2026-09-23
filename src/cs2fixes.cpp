@@ -936,6 +936,11 @@ void CS2Fixes::Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int
 	
 	if (g_cvarZMEnable.Get())
 		ZM_Hook_ClientPutInServer(slot, pszName, type, xuid);
+
+	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - confirms
+	// whether a crash happens strictly after our own hook chain finishes (i.e. in engine code
+	// we don't control) vs still inside it. Remove once the actual culprit is found and fixed.
+	ConMsg("[CrashDebug] CS2Fixes::Hook_ClientPutInServer: end, about to return to engine\n");
 }
 
 void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReason reason, const char* pszName, uint64 xuid, const char* pszNetworkID)

@@ -993,12 +993,15 @@ void ZM_SpawnPlayer(CCSPlayerController* pController)
 	// Make sure the round ends if spawning into an empty server
 	if (!ZM_IsTeamAlive(CS_TEAM_CT) && !ZM_IsTeamAlive(CS_TEAM_T) && g_ZMRoundState != EZMRoundState::ROUND_END)
 	{
-		ConMsg("[CrashDebug] ZM_SpawnPlayer: empty-server branch\n");
+		ConMsg("[CrashDebug] ZM_SpawnPlayer: empty-server branch, g_pGameRules=%p\n", (void*)g_pGameRules);
 		if (!g_pGameRules)
 			return;
 
+		ConMsg("[CrashDebug] ZM_SpawnPlayer: about to call TerminateRound\n");
 		g_pGameRules->TerminateRound(1.0f, CSRoundEndReason::GameStart);
+		ConMsg("[CrashDebug] ZM_SpawnPlayer: TerminateRound returned\n");
 		g_ZMRoundState = EZMRoundState::ROUND_END;
+		ConMsg("[CrashDebug] ZM_SpawnPlayer: empty-server branch end\n");
 		return;
 	}
 	ConMsg("[CrashDebug] ZM_SpawnPlayer: past empty-server check, about to GetHandle\n");
