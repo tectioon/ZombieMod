@@ -784,14 +784,22 @@ bool FASTCALL Detour_TraceShape(int64* a1, int64 a2, int64 a3, int64 a4, CTraceF
 	return TraceShape(a1, a2, a3, a4, filter, a6);
 }
 
+// 2026-09-22 CS2 update reshuffled this function's parameters (confirmed against upstream's own
+// fix, which migrated to a different hooking framework wholesale - not adopted here, see that
+// commit's detours.cpp for the new signature this was ported from): a new pParameterContainer
+// parameter was inserted at what used to be the "value" slot, and "value" (the CVariant*) moved to
+// the very end where an unused placeholder used to be. Reading the old 4th-parameter slot as
+// "value" post-update would silently reinterpret pParameterContainer as a CVariant* - since this
+// detour fires on every entity I/O output (i.e. constantly, from normal map logic), that's exactly
+// the kind of memory corruption that would crash almost immediately after level load.
 CDetour<decltype(Detour_CEntityIOOutput_FireOutputInternal)>* CEntityIOOutput_FireOutputInternal = nullptr;
 std::map<std::string, std::function<void(const CEntityIOOutput*, CEntityInstance*, CEntityInstance*, const CVariant*, float)>> mapIOFunctions{};
-void FASTCALL Detour_CEntityIOOutput_FireOutputInternal(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, const CVariant* value, float flDelay, void* a6, void* a7)
+void FASTCALL Detour_CEntityIOOutput_FireOutputInternal(const CEntityIOOutput* pThis, CEntityInstance* pActivator, CEntityInstance* pCaller, void* pParameterContainer, float flDelay, void* a6, const CVariant* value)
 {
 	for (const auto& [name, cb] : mapIOFunctions)
 		cb(pThis, pActivator, pCaller, value, flDelay);
 
-	(*CEntityIOOutput_FireOutputInternal)(pThis, pActivator, pCaller, value, flDelay, a6, a7);
+	(*CEntityIOOutput_FireOutputInternal)(pThis, pActivator, pCaller, pParameterContainer, flDelay, a6, value);
 }
 
 // Tries to setup Detour_CEntityIOOutput_FireOutputInternal if it is not already setup. This is not
