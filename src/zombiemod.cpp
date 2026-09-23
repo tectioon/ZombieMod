@@ -984,11 +984,16 @@ bool ZM_Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLar
 
 void ZM_SpawnPlayer(CCSPlayerController* pController)
 {
+	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - see
+	// ZM_Hook_ClientPutInServer's own comment. Remove once the actual culprit is found and fixed.
+	ConMsg("[CrashDebug] ZM_SpawnPlayer: start, about to ChangeTeam\n");
 	pController->ChangeTeam(g_ZMRoundState == EZMRoundState::POST_INFECTION ? CS_TEAM_T : CS_TEAM_CT);
+	ConMsg("[CrashDebug] ZM_SpawnPlayer: ChangeTeam returned\n");
 
 	// Make sure the round ends if spawning into an empty server
 	if (!ZM_IsTeamAlive(CS_TEAM_CT) && !ZM_IsTeamAlive(CS_TEAM_T) && g_ZMRoundState != EZMRoundState::ROUND_END)
 	{
+		ConMsg("[CrashDebug] ZM_SpawnPlayer: empty-server branch\n");
 		if (!g_pGameRules)
 			return;
 
@@ -996,8 +1001,10 @@ void ZM_SpawnPlayer(CCSPlayerController* pController)
 		g_ZMRoundState = EZMRoundState::ROUND_END;
 		return;
 	}
+	ConMsg("[CrashDebug] ZM_SpawnPlayer: past empty-server check, about to GetHandle\n");
 
 	CHandle<CCSPlayerController> handle = pController->GetHandle();
+	ConMsg("[CrashDebug] ZM_SpawnPlayer: got handle, about to CTimer::Create\n");
 	CTimer::Create(2.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [handle]() {
 		CCSPlayerController* pController = (CCSPlayerController*)handle.Get();
 		if (!pController || !g_bRespawnEnabled || pController->m_iTeamNum < CS_TEAM_T)
@@ -1005,24 +1012,38 @@ void ZM_SpawnPlayer(CCSPlayerController* pController)
 		pController->Respawn();
 		return -1.0f;
 	});
+	ConMsg("[CrashDebug] ZM_SpawnPlayer: end\n");
 }
 
 void ZM_Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int type, uint64 xuid)
 {
+	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - narrows down
+	// exactly which step crashes without needing a core dump/stack trace. Remove once the actual
+	// culprit is found and fixed.
+	ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: start\n");
+
 	CCSPlayerController* pController = CCSPlayerController::FromSlot(slot);
 	if (!pController)
 		return;
+	ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: got controller\n");
 
 	ZEPlayer* pPlayer = pController->GetZEPlayer();
+	ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: got ZEPlayer (null=%d)\n", pPlayer == nullptr);
 	if (pPlayer)
 	{
 		pPlayer->SetHitsFromZombies(0);
+		ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: SetHitsFromZombies done\n");
 		pPlayer->SetHumanTeleUsages(0);
+		ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: SetHumanTeleUsages done\n");
 		pPlayer->SetZombieTeleUsages(0);
+		ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: SetZombieTeleUsages done\n");
 		pPlayer->SetFrozen(false);
+		ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: SetFrozen done\n");
 	}
 
+	ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: about to call ZM_SpawnPlayer\n");
 	ZM_SpawnPlayer(pController);
+	ConMsg("[CrashDebug] ZM_Hook_ClientPutInServer: ZM_SpawnPlayer returned\n");
 }
 
 void ZM_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args)
