@@ -49,21 +49,34 @@ void Panic(const char* msg, ...)
 
 CUtlVector<CServerSideClient*>* GetClientList()
 {
-	if (!GetNetworkGameServer())
+	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - narrowed the
+	// crash down to somewhere in GetClientBySlot via ConMsg bracketing in playermanager.cpp; this
+	// pins down whether it's the offset lookup, the pointer arithmetic, or something after. Remove
+	// once the actual culprit is found and fixed.
+	INetworkGameServer* pServer = GetNetworkGameServer();
+	ConMsg("[CrashDebug] GetClientList: pServer=%p sizeof(INetworkGameServer)=%zu\n", (void*)pServer, sizeof(INetworkGameServer));
+	if (!pServer)
 		return nullptr;
 
 	static int offset = g_GameConfig->GetOffset("CNetworkGameServer_ClientList");
-	return (CUtlVector<CServerSideClient*>*)(&GetNetworkGameServer()[offset]);
+	ConMsg("[CrashDebug] GetClientList: offset=%d\n", offset);
+	CUtlVector<CServerSideClient*>* pResult = (CUtlVector<CServerSideClient*>*)(&pServer[offset]);
+	ConMsg("[CrashDebug] GetClientList: computed pResult=%p, about to return\n", (void*)pResult);
+	return pResult;
 }
 
 CServerSideClient* GetClientBySlot(CPlayerSlot slot)
 {
+	ConMsg("[CrashDebug] GetClientBySlot: start\n");
 	CUtlVector<CServerSideClient*>* pClients = GetClientList();
+	ConMsg("[CrashDebug] GetClientBySlot: GetClientList returned %p\n", (void*)pClients);
 
 	if (!pClients)
 		return nullptr;
 
-	return pClients->Element(slot.Get());
+	CServerSideClient* pResult = pClients->Element(slot.Get());
+	ConMsg("[CrashDebug] GetClientBySlot: Element() returned %p\n", (void*)pResult);
+	return pResult;
 }
 
 uint32 GetSoundEventHash(const char* pszSoundEventName)
