@@ -2001,6 +2001,26 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 	});
 }
 
+// For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
+// sword's blade flame): dispatched attached to the weapon entity's attachment so it follows the
+// blade, which is how the pack's own viewmodel-flagged particles are meant to be driven.
+CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> - Dispatch a particle following an entity attachment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 4)
+	{
+		ConMsg("zm_dispatch_particle: usage: zm_dispatch_particle <entity_index> <effect_name> <attachment_name>\n");
+		return;
+	}
+
+	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(V_StringToInt32(args[1], -1)));
+	if (!pEnt)
+		return;
+
+	CRecipientFilter filter;
+	filter.AddAllPlayers();
+	pEnt->DispatchParticle(args[2], &filter, PATTACH_POINT_FOLLOW, 0, args[3]);
+}
+
 // For EconomyShopPlugin's Pulse Rifle orb, which has no real entity to call EmitSound on (it's a
 // plugin-side simulated projectile, not a spawned game entity) - spawns an invisible info_target
 // at the position just to anchor a positioned EmitSound call, same short-lived CHandle+CTimer
