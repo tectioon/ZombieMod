@@ -108,10 +108,6 @@ bool CUserPreferencesSystem::PutPreferences(int iSlot, uint64 iSteamId, UserPref
 
 void CUserPreferencesSystem::OnPutPreferences(int iSlot)
 {
-	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - crash was
-	// bracketed to somewhere inside PullPreferences/LoadPreferences's callback chain, which ends up
-	// here. Remove once the culprit is found and fixed.
-	ConMsg("[CrashDebug] OnPutPreferences: start, slot=%d\n", iSlot);
 	int iHideDistance = GetPreferenceInt(iSlot, HIDE_DISTANCE_PREF_KEY_NAME, 0);
 	int iSoundStatus = GetPreferenceInt(iSlot, SOUND_STATUS_PREF_KEY_NAME, 1);
 	bool bStopSound = (bool)(iSoundStatus & 1);
@@ -128,7 +124,6 @@ void CUserPreferencesSystem::OnPutPreferences(int iSlot)
 	Color ewHudColor;
 	V_StringToColor(g_pUserPreferencesSystem->GetPreference(iSlot, EW_PREF_HUDCOLOR, "255 255 255 255"), ewHudColor);
 	float flEntwatchHudSize = GetPreferenceFloat(iSlot, EW_PREF_HUDSIZE, EW_HUDSIZE_DEFAULT);
-	ConMsg("[CrashDebug] OnPutPreferences: preferences read, about to SetPlayerStopSound\n");
 
 	// Set the values that we just loaded --- the player is guaranteed available
 	g_playerManager->SetPlayerStopSound(iSlot, bStopSound);
@@ -136,25 +131,17 @@ void CUserPreferencesSystem::OnPutPreferences(int iSlot)
 	g_playerManager->SetPlayerZSounds(iSlot, (EZSoundsType)iZSounds);
 	g_playerManager->SetPlayerStopDecals(iSlot, bHideDecals);
 	g_playerManager->SetPlayerNoShake(iSlot, bNoShake);
-	ConMsg("[CrashDebug] OnPutPreferences: playerManager setters done, about to GetPlayer\n");
 
 	ZEPlayer* player = g_playerManager->GetPlayer(CPlayerSlot(iSlot));
-	ConMsg("[CrashDebug] OnPutPreferences: got player (null=%d), about to SetHideDistance\n", player == nullptr);
 	player->SetHideDistance(iHideDistance);
-	ConMsg("[CrashDebug] OnPutPreferences: SetHideDistance done, about to CycleButtonWatch x%d\n", iButtonWatchMode);
 	for (int i = 0; i < iButtonWatchMode; i++)
 		player->CycleButtonWatch();
-	ConMsg("[CrashDebug] OnPutPreferences: CycleButtonWatch done, about to SetEntwatchHudMode\n");
 
 	// Set EntWatch
 	player->SetEntwatchHudMode(iEntwatchMode);
-	ConMsg("[CrashDebug] OnPutPreferences: SetEntwatchHudMode done, about to SetEntwatchHudPos\n");
 	player->SetEntwatchHudPos(flEntwatchHudposX, flEntwatchHudposY);
-	ConMsg("[CrashDebug] OnPutPreferences: SetEntwatchHudPos done, about to SetEntwatchHudColor\n");
 	player->SetEntwatchHudColor(ewHudColor);
-	ConMsg("[CrashDebug] OnPutPreferences: SetEntwatchHudColor done, about to SetEntwatchHudSize\n");
 	player->SetEntwatchHudSize(flEntwatchHudSize);
-	ConMsg("[CrashDebug] OnPutPreferences: end\n");
 }
 
 void CUserPreferencesSystem::PullPreferences(int iSlot)
@@ -166,19 +153,12 @@ void CUserPreferencesSystem::PullPreferences(int iSlot)
 	if (!player || !player->IsAuthenticated()) return;
 	uint64 iSteamId = player->GetSteamId64();
 
-	ConMsg("[CrashDebug] PullPreferences: about to call LoadPreferences for slot=%d steamid=%llu\n", iSlot, iSteamId);
 	g_pUserPreferencesStorage->LoadPreferences(
 		iSteamId,
 		[iSlot](uint64 iSteamId, UserPrefsMap_t& preferenceData) {
-			ConMsg("[CrashDebug] PullPreferences callback: start, about to PutPreferences\n");
 			if (g_pUserPreferencesSystem->PutPreferences(iSlot, iSteamId, preferenceData))
-			{
-				ConMsg("[CrashDebug] PullPreferences callback: PutPreferences true, about to OnPutPreferences\n");
 				g_pUserPreferencesSystem->OnPutPreferences(iSlot);
-			}
-			ConMsg("[CrashDebug] PullPreferences callback: end\n");
 		});
-	ConMsg("[CrashDebug] PullPreferences: LoadPreferences call returned\n");
 }
 
 const char* CUserPreferencesSystem::GetPreference(int iSlot, const char* sKey, const char* sDefaultValue)

@@ -936,11 +936,6 @@ void CS2Fixes::Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int
 	
 	if (g_cvarZMEnable.Get())
 		ZM_Hook_ClientPutInServer(slot, pszName, type, xuid);
-
-	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - confirms
-	// whether a crash happens strictly after our own hook chain finishes (i.e. in engine code
-	// we don't control) vs still inside it. Remove once the actual culprit is found and fixed.
-	ConMsg("[CrashDebug] CS2Fixes::Hook_ClientPutInServer: end, about to return to engine\n");
 }
 
 void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReason reason, const char* pszName, uint64 xuid, const char* pszNetworkID)
@@ -1012,26 +1007,10 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 
 	VPROF("CS2Fixes::Hook_CheckTransmit");
 
-	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - a crash keeps
-	// happening for real (non-bot) clients right after they finish ClientPutInServer, in engine code
-	// we don't otherwise see. CheckTransmit is the prime suspect since it's real-client-only and runs
-	// via CCheckTransmitInfoExtended, a hand-reversed struct laid directly over engine memory - only
-	// logs the FIRST call (static flag) to avoid flooding, since this runs every network frame.
-	// Remove once the culprit is found and fixed.
-	static bool bLoggedOnce = false;
-	bool bLogThisCall = !bLoggedOnce;
-	bLoggedOnce = true;
-	if (bLogThisCall)
-		ConMsg("[CrashDebug] Hook_CheckTransmit: first call, infoCount=%d\n", infoCount);
-
 	for (int i = 0; i < infoCount; i++)
 	{
 		auto& pInfo = (CCheckTransmitInfoExtended*&)(ppInfoList[i]);
-		if (bLogThisCall && i == 0)
-			ConMsg("[CrashDebug] Hook_CheckTransmit: i=%d ppInfoList[i]=%p, about to read m_nPlayerSlot\n", i, (void*)ppInfoList[i]);
 		CCSPlayerController* pSelfController = CCSPlayerController::FromSlot(pInfo->m_nPlayerSlot);
-		if (bLogThisCall && i == 0)
-			ConMsg("[CrashDebug] Hook_CheckTransmit: i=%d got m_nPlayerSlot=%d, pSelfController=%p\n", i, pInfo->m_nPlayerSlot.Get(), (void*)pSelfController);
 
 		if (!pSelfController || !pSelfController->IsConnected())
 			continue;

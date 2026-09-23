@@ -120,19 +120,11 @@ void ZEPlayer::OnAuthenticated()
 
 	Message("%lli authenticated\n", GetSteamId64());
 
-	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - a crash was
-	// bracketed to somewhere after CheckAdmin() logs "authenticated as an admin" but before
-	// Hook_ClientPutInServer fires for the real player. Remove once the culprit is found and fixed.
-	ConMsg("[CrashDebug] OnAuthenticated: about to CheckAdmin\n");
 	CheckAdmin();
-	ConMsg("[CrashDebug] OnAuthenticated: CheckAdmin returned, about to CheckInfractions\n");
 	CheckInfractions();
-	ConMsg("[CrashDebug] OnAuthenticated: CheckInfractions returned, about to PullPreferences\n");
 	g_pUserPreferencesSystem->PullPreferences(GetPlayerSlot().Get());
-	ConMsg("[CrashDebug] OnAuthenticated: PullPreferences returned, about to SetSteamIdAttribute\n");
 
 	SetSteamIdAttribute();
-	ConMsg("[CrashDebug] OnAuthenticated: SetSteamIdAttribute returned, end\n");
 }
 
 void ZEPlayer::CheckInfractions()
@@ -848,30 +840,20 @@ void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 
 void CPlayerManager::OnClientPutInServer(CPlayerSlot slot)
 {
-	// TEMPORARY crash-diagnostic logging (2026-09-23 post-CS2-update investigation) - see
-	// ZM_Hook_ClientPutInServer's own comment in zombiemod.cpp. Remove once the actual culprit is
-	// found and fixed.
-	ConMsg("[CrashDebug] OnClientPutInServer: start\n");
 	ZEPlayer* pPlayer = m_vecPlayers[slot.Get()];
-	ConMsg("[CrashDebug] OnClientPutInServer: got pPlayer (null=%d)\n", pPlayer == nullptr);
 
 	pPlayer->SetInGame(true);
-	ConMsg("[CrashDebug] OnClientPutInServer: SetInGame done\n");
 
 	if (!g_pSpawnGroupMgr)
 		return;
-	ConMsg("[CrashDebug] OnClientPutInServer: g_pSpawnGroupMgr non-null, about to GetSpawnGroups\n");
 
 	CUtlVector<SpawnGroupHandle_t> vecActualSpawnGroups;
 	addresses::GetSpawnGroups(g_pSpawnGroupMgr, &vecActualSpawnGroups);
-	ConMsg("[CrashDebug] OnClientPutInServer: GetSpawnGroups returned, count=%d\n", vecActualSpawnGroups.Count());
 
 	CServerSideClient* pClient = GetClientBySlot(slot);
-	ConMsg("[CrashDebug] OnClientPutInServer: got pClient (null=%d)\n", pClient == nullptr);
 
 	if (pClient && pClient->m_vecLoadedSpawnGroups.Count() != vecActualSpawnGroups.Count())
 		pClient->m_vecLoadedSpawnGroups = vecActualSpawnGroups;
-	ConMsg("[CrashDebug] OnClientPutInServer: end\n");
 }
 
 void CPlayerManager::OnLateLoad()
