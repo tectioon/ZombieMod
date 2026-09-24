@@ -2023,15 +2023,16 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	pEnt->DispatchParticle(args[2], &filter, PATTACH_POINT_FOLLOW, 0, args[3]);
 }
 
-// For EconomyShopPlugin's custom melee weapons. A client builds a weapon's first-person model the
-// first time that weapon is drawn and ignores later model changes, so a knife the player has
-// already drawn can't just be reskinned: it's swapped for a fresh knife that gets its model in the
-// same call, before any client can have seen it (guns already work this way - they're given fresh).
-CON_COMMAND_F(zm_replace_knife, "<userid> <model_path> - Replace a player's knife with a fresh one using a custom model", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+// For EconomyShopPlugin's custom weapons. A client builds a weapon's first-person model the first
+// time that weapon is drawn and ignores later model changes, and GiveNamedItem can draw the new
+// weapon immediately (auto-switch to a better weapon), so the model has to be set in the same call
+// that creates it, before any snapshot reaches a client. A knife the player already carries is
+// removed first, since a player can only hold one.
+CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> - Give a player a weapon with a custom model", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
-	if (args.ArgC() < 3)
+	if (args.ArgC() < 4)
 	{
-		ConMsg("zm_replace_knife: usage: zm_replace_knife <userid> <model_path>\n");
+		ConMsg("zm_give_custom_weapon: usage: zm_give_custom_weapon <userid> <classname> <model_path>\n");
 		return;
 	}
 
@@ -2039,26 +2040,29 @@ CON_COMMAND_F(zm_replace_knife, "<userid> <model_path> - Replace a player's knif
 	CCSPlayerPawn* pPawn = pTarget ? pTarget->GetPlayerPawn() : nullptr;
 	if (!pPawn || !pPawn->m_pWeaponServices() || !pPawn->m_pItemServices())
 	{
-		ConMsg("zm_replace_knife: no pawn for userid %s\n", args[1]);
+		ConMsg("zm_give_custom_weapon: no pawn for userid %s\n", args[1]);
 		return;
 	}
 
-	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pPawn->m_pWeaponServices()->m_hMyWeapons();
-	FOR_EACH_VEC(*weapons, i)
+	if (!V_strncmp(args[2], "weapon_knife", 12))
 	{
-		CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
-		if (pWeapon && pWeapon->GetWeaponVData()->m_GearSlot() == GEAR_SLOT_KNIFE)
+		CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pPawn->m_pWeaponServices()->m_hMyWeapons();
+		FOR_EACH_VEC(*weapons, i)
 		{
-			// Drop first so the knife slot is free right now - Remove() alone only deletes at frame end
-			pPawn->m_pWeaponServices()->DropWeapon(pWeapon);
-			pWeapon->Remove();
-			break;
+			CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
+			if (pWeapon && pWeapon->GetWeaponVData()->m_GearSlot() == GEAR_SLOT_KNIFE)
+			{
+				// Drop first so the knife slot is free right now - Remove() alone only deletes at frame end
+				pPawn->m_pWeaponServices()->DropWeapon(pWeapon);
+				pWeapon->Remove();
+				break;
+			}
 		}
 	}
 
-	CBasePlayerWeapon* pKnife = pPawn->m_pItemServices()->GiveNamedItem("weapon_knife");
-	if (pKnife)
-		pKnife->SetModel(args[2]);
+	CBasePlayerWeapon* pWeapon = pPawn->m_pItemServices()->GiveNamedItem(args[2]);
+	if (pWeapon)
+		pWeapon->SetModel(args[3]);
 }
 
 // For EconomyShopPlugin's Pulse Rifle orb, which has no real entity to call EmitSound on (it's a
