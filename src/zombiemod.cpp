@@ -1033,13 +1033,11 @@ void ZM_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args)
 	if (!pController)
 		return;
 
-	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();
-	if (pPawn && pPawn->IsAlive())
-		pPawn->CommitSuicide(false, true);
-
-	if (args.ArgC() >= 2 && !V_strcmp(args.Arg(1), "1"))
-		pController->SwitchTeam(CS_TEAM_SPECTATOR);
-	else if (pController->m_iTeamNum == CS_TEAM_SPECTATOR)
+	// Spectator is disabled in ZombieMod: any team-menu choice (including "jointeam 1") puts a player
+	// who isn't playing yet into the game, and is ignored for players already on a team. This used to
+	// spawn only players already in spectator, so an unassigned player (team 0) clicking CT/T got
+	// nothing and could only pick Spectator.
+	if (pController->m_iTeamNum < CS_TEAM_T)
 		ZM_SpawnPlayer(pController);
 }
 
@@ -2014,8 +2012,14 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 		return;
 	}
 
-	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(V_StringToInt32(args[1], -1)));
-	if (!pEnt)
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS)
+		return;
+
+	// Only ever meant for a held weapon; the queued command can run after a map change or weapon
+	// removal, when the index may point at nothing or at an unrelated entity.
+	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pEnt || V_strncmp(pEnt->GetClassname(), "weapon_", 7))
 		return;
 
 	CRecipientFilter filter;

@@ -40,6 +40,7 @@
 #include "usermessages.pb.h"
 #include "utils/entity.h"
 #include "utlstring.h"
+#include "zombiemod.h"
 #include "zombiereborn.h"
 #undef snprintf
 #include "vendor/nlohmann/json.hpp"
@@ -628,6 +629,12 @@ CON_COMMAND_CHAT(spec, "[name] - Spectate another player or join spectators")
 	if (!player)
 	{
 		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
+		return;
+	}
+
+	if (g_cvarZMEnable.Get())
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Spectator is disabled on this server.");
 		return;
 	}
 
