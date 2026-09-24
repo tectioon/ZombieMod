@@ -915,7 +915,9 @@ AcquireResult ZM_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices
 
 	if (pPawn->m_iTeamNum() == CS_TEAM_T && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && V_strncmp(pWeaponInfo->m_pClass, "weapon_c4", 9))
 		return AcquireResult::NotAllowedByTeam;
-	if (pPawn->m_iTeamNum() == CS_TEAM_CT && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
+	// Knives are exempt: the weapon config restricts guns, and EconomyShopPlugin's custom melee can
+	// be built on a specific knife type (e.g. weapon_knife_karambit, for its own animation graph)
+	if (pPawn->m_iTeamNum() == CS_TEAM_CT && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
 		return AcquireResult::NotAllowedByProhibition;
 
 	// doesn't guarantee the player will acquire the weapon, it just allows the original function to run
