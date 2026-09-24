@@ -2021,6 +2021,44 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	pEnt->DispatchParticle(args[2], &filter, PATTACH_POINT_FOLLOW, 0, args[3]);
 }
 
+// For EconomyShopPlugin's custom melee weapons. A client builds a weapon's first-person model the
+// first time that weapon is drawn and ignores later model changes, so a knife the player has
+// already drawn can't just be reskinned: it's swapped for a fresh knife that gets its model in the
+// same call, before any client can have seen it (guns already work this way - they're given fresh).
+CON_COMMAND_F(zm_replace_knife, "<userid> <model_path> - Replace a player's knife with a fresh one using a custom model", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 3)
+	{
+		ConMsg("zm_replace_knife: usage: zm_replace_knife <userid> <model_path>\n");
+		return;
+	}
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	CCSPlayerPawn* pPawn = pTarget ? pTarget->GetPlayerPawn() : nullptr;
+	if (!pPawn || !pPawn->m_pWeaponServices() || !pPawn->m_pItemServices())
+	{
+		ConMsg("zm_replace_knife: no pawn for userid %s\n", args[1]);
+		return;
+	}
+
+	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pPawn->m_pWeaponServices()->m_hMyWeapons();
+	FOR_EACH_VEC(*weapons, i)
+	{
+		CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
+		if (pWeapon && pWeapon->GetWeaponVData()->m_GearSlot() == GEAR_SLOT_KNIFE)
+		{
+			// Drop first so the knife slot is free right now - Remove() alone only deletes at frame end
+			pPawn->m_pWeaponServices()->DropWeapon(pWeapon);
+			pWeapon->Remove();
+			break;
+		}
+	}
+
+	CBasePlayerWeapon* pKnife = pPawn->m_pItemServices()->GiveNamedItem("weapon_knife");
+	if (pKnife)
+		pKnife->SetModel(args[2]);
+}
+
 // For EconomyShopPlugin's Pulse Rifle orb, which has no real entity to call EmitSound on (it's a
 // plugin-side simulated projectile, not a spawned game entity) - spawns an invisible info_target
 // at the position just to anchor a positioned EmitSound call, same short-lived CHandle+CTimer
