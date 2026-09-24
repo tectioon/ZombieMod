@@ -2004,11 +2004,11 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
 // sword's blade flame): dispatched attached to the weapon entity's attachment so it follows the
 // blade, which is how the pack's own viewmodel-flagged particles are meant to be driven.
-CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> - Dispatch a particle following an entity attachment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> [owner_pawn_attachment] - Dispatch a particle following an entity attachment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 4)
 	{
-		ConMsg("zm_dispatch_particle: usage: zm_dispatch_particle <entity_index> <effect_name> <attachment_name>\n");
+		ConMsg("zm_dispatch_particle: usage: zm_dispatch_particle <entity_index> <effect_name> <attachment_name> [owner_pawn_attachment]\n");
 		return;
 	}
 
@@ -2022,9 +2022,29 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	if (!pEnt || V_strncmp(pEnt->GetClassname(), "weapon_", 7))
 		return;
 
-	CRecipientFilter filter;
-	filter.AddAllPlayers();
-	pEnt->DispatchParticle(args[2], &filter, PATTACH_POINT_FOLLOW, 0, args[3]);
+	// Optional 4th arg, for a held weapon: other players see the weapon bone-merged onto the owner's
+	// hand, but an effect attached to the weapon entity itself is drawn from the weapon's own
+	// unmerged transform (upright, beside the player). They get it on the owner pawn's hand
+	// attachment instead; only the owner (first person, where the weapon's attachment is right)
+	// gets it on the weapon.
+	CCSPlayerPawn* pOwner = args.ArgC() >= 5 ? (CCSPlayerPawn*)pEnt->m_hOwnerEntity().Get() : nullptr;
+	CCSPlayerController* pOwnerController = pOwner && pOwner->IsPawn() ? pOwner->GetOriginalController() : nullptr;
+	if (!pOwnerController)
+	{
+		CRecipientFilter filter;
+		filter.AddAllPlayers();
+		pEnt->DispatchParticle(args[2], &filter, PATTACH_POINT_FOLLOW, 0, args[3]);
+		return;
+	}
+
+	CSingleRecipientFilter ownerFilter(pOwnerController->GetPlayerSlot());
+	pEnt->DispatchParticle(args[2], &ownerFilter, PATTACH_POINT_FOLLOW, 0, args[3]);
+
+	CRecipientFilter othersFilter;
+	for (int i = 0; i < MAXPLAYERS; i++)
+		if (i != pOwnerController->GetPlayerSlot() && g_playerManager->GetPlayer(i))
+			othersFilter.AddRecipient(i);
+	pOwner->DispatchParticle(args[2], &othersFilter, PATTACH_POINT_FOLLOW, 0, args[4]);
 }
 
 // For EconomyShopPlugin's custom weapons. A client builds a weapon's first-person model the first
