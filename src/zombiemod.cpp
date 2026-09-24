@@ -343,7 +343,9 @@ void ZM_OnPlayerSpawn(CCSPlayerController* pController)
 	// also set team immediately in case the spawn teleport is team filtered
 	if (bInfect)
 	{
-		pController->GetPawn()->m_bTakesDamage(false);
+		if (pController->GetPawn())
+			pController->GetPawn()->m_bTakesDamage(false);
+
 		pController->SwitchTeam(CS_TEAM_T);
 	}
 	else
