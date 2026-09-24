@@ -2008,6 +2008,56 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // doesn't work for this: it ignores the attachment name (the flame sat at the weapon's origin
 // beside the player, or at the feet when sent on the pawn), and as a temp effect it only reached
 // players standing right next to the owner.
+//
+// The owner gets a separate copy. The MoeUB flame is a viewmodel effect, and in the owner's own
+// view the client places it on the attachment of the *default knife's* first-person model (bottom
+// right of the screen), not on the custom blade - the server can't reach the first-person model.
+// The owner's copy is shifted onto the blade by a local offset/rotation tuned live with these
+// cvars; each copy is hidden from the other side in CheckTransmit.
+CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "Local \"x y z\" offset of a held weapon's particle in its owner's first person", "0 0 0");
+CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "Local \"pitch yaw roll\" of a held weapon's particle in its owner's first person", "0 0 0");
+
+struct HeldParticle_t
+{
+	CHandle<CParticleSystem> hParticle;
+	int iOwnerSlot;
+	bool bOwnerCopy;
+};
+std::vector<HeldParticle_t> g_vecHeldParticles;
+
+void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity)
+{
+	for (const auto& held : g_vecHeldParticles)
+	{
+		CParticleSystem* pParticle = held.hParticle.Get();
+		if (pParticle && (held.iOwnerSlot == iPlayerSlot) != held.bOwnerCopy)
+			pTransmitEntity->Clear(pParticle->entindex());
+	}
+}
+
+static CParticleSystem* SpawnHeldParticle(CBaseEntity* pWeapon, const char* pszEffect, const char* pszAttachment, bool bOwnerCopy)
+{
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return nullptr;
+
+	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
+	particle->AcceptInput("SetParentAttachment", pszAttachment);
+	if (bOwnerCopy)
+	{
+		particle->AcceptInput("SetLocalOrigin", g_cvarZMHeldParticleOwnerOffset.Get().String());
+		particle->AcceptInput("SetLocalAngles", g_cvarZMHeldParticleOwnerAngles.Get().String());
+	}
+	particle->m_bStartActive(true);
+	particle->m_iszEffectName(pszEffect);
+	particle->DispatchSpawn();
+
+	// Outlives the ~1s re-send interval a little so consecutive flames overlap instead of flickering.
+	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", 1.4f);
+	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", 1.45f);
+	return particle;
+}
+
 CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> - Show a particle on an entity attachment for a moment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 4)
@@ -2026,19 +2076,20 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	if (!pEnt || V_strncmp(pEnt->GetClassname(), "weapon_", 7))
 		return;
 
-	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
-	if (!particle)
+	CCSPlayerPawn* pOwner = (CCSPlayerPawn*)pEnt->m_hOwnerEntity().Get();
+	CCSPlayerController* pOwnerController = pOwner && pOwner->IsPawn() ? pOwner->GetOriginalController() : nullptr;
+
+	std::erase_if(g_vecHeldParticles, [](const HeldParticle_t& held) { return !held.hParticle.Get(); });
+
+	CParticleSystem* pOthers = SpawnHeldParticle(pEnt, args[2], args[3], false);
+	if (!pOwnerController)
 		return;
 
-	particle->AcceptInput("SetParent", "!activator", pEnt, nullptr);
-	particle->AcceptInput("SetParentAttachment", args[3]);
-	particle->m_bStartActive(true);
-	particle->m_iszEffectName(args[2]);
-	particle->DispatchSpawn();
+	if (pOthers)
+		g_vecHeldParticles.push_back({pOthers->GetHandle(), pOwnerController->GetPlayerSlot(), false});
 
-	// Outlives the ~1s re-send interval a little so consecutive flames overlap instead of flickering.
-	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", 1.4f);
-	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", 1.45f);
+	if (CParticleSystem* pOwnerCopy = SpawnHeldParticle(pEnt, args[2], args[3], true))
+		g_vecHeldParticles.push_back({pOwnerCopy->GetHandle(), pOwnerController->GetPlayerSlot(), true});
 }
 
 // For EconomyShopPlugin's custom weapons. A client builds a weapon's first-person model the first

@@ -19,7 +19,9 @@
 
 #pragma once
 #include "adminsystem.h"
+#include "bitvec.h"
 #include "ctimer.h"
+#include "eiface.h"
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
 #include "eventlistener.h"
@@ -64,6 +66,7 @@ AcquireResult ZM_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices
 bool ZM_Detour_CEntityIdentity_AcceptInput(CEntityIdentity* pThis, CUtlSymbolLarge* pInputName, CEntityInstance* pActivator, CEntityInstance* pCaller, variant_t* value);
 void ZM_Hook_ClientPutInServer(CPlayerSlot slot, char const* pszName, int type, uint64 xuid);
 void ZM_Hook_ClientCommand_JoinTeam(CPlayerSlot slot, const CCommand& args);
+void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity);
 void ZM_Precache(IEntityResourceManifest* pResourceManifest);
 bool ZM_CheckTeamWinConditions(int iTeamNum);
 void ZM_CCSPlayer_WeaponServices_EquipWeapon(CCSPlayer_WeaponServices* pWeaponServices, CBasePlayerWeapon* pWeapon);

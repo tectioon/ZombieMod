@@ -1065,6 +1065,11 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 
 		if (pGlowModel)
 			pInfo->m_pTransmitEntity->Clear(pGlowModel->entindex());
+
+		// Held-weapon particles: the owner's first-person copy only to the owner, the normal one
+		// to everyone else
+		if (g_cvarZMEnable.Get())
+			ZM_FilterHeldParticleTransmit(pInfo->m_nPlayerSlot.Get(), pInfo->m_pTransmitEntity);
 	}
 }
 
