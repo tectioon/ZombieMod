@@ -915,9 +915,7 @@ AcquireResult ZM_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices
 
 	if (pPawn->m_iTeamNum() == CS_TEAM_T && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && V_strncmp(pWeaponInfo->m_pClass, "weapon_c4", 9))
 		return AcquireResult::NotAllowedByTeam;
-	// Knives are exempt: the weapon config restricts guns, and EconomyShopPlugin's custom melee can
-	// be built on a specific knife type (e.g. weapon_knife_karambit, for its own animation graph)
-	if (pPawn->m_iTeamNum() == CS_TEAM_CT && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
+	if (pPawn->m_iTeamNum() == CS_TEAM_CT && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
 		return AcquireResult::NotAllowedByProhibition;
 
 	// doesn't guarantee the player will acquire the weapon, it just allows the original function to run
@@ -2062,9 +2060,26 @@ CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> - Give a
 		}
 	}
 
-	CBasePlayerWeapon* pWeapon = pPawn->m_pItemServices()->GiveNamedItem(args[2]);
-	if (pWeapon)
-		pWeapon->SetModel(args[3]);
+	// Every knife type is a weapon_knife entity told apart by its item definition index, so
+	// GiveNamedItem("weapon_knife_karambit") gives nothing - give a plain knife and switch its
+	// subclass instead (same as knife skin plugins do). Falls back to the plain knife on failure
+	// so the player is never left without one after their old knife was removed above.
+	const WeaponInfo_t* pInfo = FindWeaponInfoByClass(args[2]);
+	bool bKnifeSubclass = pInfo && pInfo->m_eSlot == GEAR_SLOT_KNIFE && V_strcmp(args[2], "weapon_knife");
+
+	CBasePlayerWeapon* pWeapon = pPawn->m_pItemServices()->GiveNamedItem(bKnifeSubclass ? "weapon_knife" : args[2]);
+	if (!pWeapon)
+		return;
+
+	if (bKnifeSubclass)
+	{
+		char szDefIndex[8];
+		V_snprintf(szDefIndex, sizeof(szDefIndex), "%d", pInfo->m_iItemDefinitionIndex);
+		pWeapon->AcceptInput("ChangeSubclass", szDefIndex);
+		pWeapon->m_AttributeManager().m_Item().m_iItemDefinitionIndex = pInfo->m_iItemDefinitionIndex;
+	}
+
+	pWeapon->SetModel(args[3]);
 }
 
 // For EconomyShopPlugin's Pulse Rifle orb, which has no real entity to call EmitSound on (it's a
