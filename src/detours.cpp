@@ -705,11 +705,40 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 	int iSlot = pController->GetPlayerSlot();
 	if (iSlot >= 0 && iSlot <= MAXPLAYERS && g_bRocketLauncherActive[iSlot])
 	{
+		// The Rocket Launcher's AUG shows its rockets as 1 loaded + the rest in reserve
+		// (EconomyShopPlugin's ApplyRocketAmmo), so a native reload would refill it to 30 real
+		// bullets - drop the reload key while the AUG is out. The flag stays set while the owner
+		// holds any other weapon, which must still reload normally.
+		CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+		CBasePlayerWeapon* pActive = pPawn && pPawn->m_pWeaponServices() ? pPawn->m_pWeaponServices()->m_hActiveWeapon().Get() : nullptr;
+		const bool bHoldingLauncher = pActive && !V_strcmp(pActive->GetClassname(), "weapon_aug");
+
 		for (int i = 0; i < numcmds; i++)
 		{
 			cmds[i].cmd.set_attack1_start_history_index(-1);
 			cmds[i].cmd.set_attack2_start_history_index(-1);
 			cmds[i].cmd.mutable_input_history()->Clear();
+
+			if (!bHoldingLauncher)
+				continue;
+
+			auto pBase = cmds[i].cmd.mutable_base();
+			if (pBase->has_buttons_pb())
+			{
+				auto pButtons = pBase->mutable_buttons_pb();
+				pButtons->set_buttonstate1(pButtons->buttonstate1() & ~IN_RELOAD);
+				pButtons->set_buttonstate2(pButtons->buttonstate2() & ~IN_RELOAD);
+				pButtons->set_buttonstate3(pButtons->buttonstate3() & ~IN_RELOAD);
+			}
+
+			auto subtickMoves = pBase->mutable_subtick_moves();
+			for (auto iterator = subtickMoves->begin(); iterator != subtickMoves->end();)
+			{
+				if (iterator->button() == IN_RELOAD)
+					iterator = subtickMoves->erase(iterator);
+				else
+					iterator++;
+			}
 		}
 	}
 
