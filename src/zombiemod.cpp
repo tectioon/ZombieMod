@@ -779,10 +779,16 @@ void ZM_StartInitialCountdown()
 	if (g_cvarZMInfectSpawnTimeMin.Get() > g_cvarZMInfectSpawnTimeMax.Get())
 		g_cvarZMInfectSpawnTimeMin.Set(g_cvarZMInfectSpawnTimeMax.Get());
 
+	// Only the newest countdown may run: a second one started in the same round (another
+	// round_freeze_end) made zm_infect_countdown_seconds jump between two values, and
+	// EconomyShopPlugin announced numbers twice over each other.
+	static int s_iCountdownGeneration = 0;
+	const int iGeneration = ++s_iCountdownGeneration;
+
 	int iRand = rand();
 	auto iSecondsElapsed = std::make_shared<int>(0);
-	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [iRand, iSecondsElapsed]() {
-		if (g_ZMRoundState != EZMRoundState::ROUND_START)
+	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [iRand, iSecondsElapsed, iGeneration]() {
+		if (g_ZMRoundState != EZMRoundState::ROUND_START || iGeneration != s_iCountdownGeneration)
 			return -1.0f;
 
 		int g_iInfectionCountDown = g_cvarZMInfectSpawnTimeMin.Get() + (iRand % (g_cvarZMInfectSpawnTimeMax.Get() - g_cvarZMInfectSpawnTimeMin.Get() + 1));
@@ -2018,14 +2024,14 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // SetLocalOrigin/SetLocalAngles inputs do nothing. Since they follow the third-person hand, not the
 // first-person model (the server has no first-person entity in CS2), they only line up with the
 // blade while the owner holds still: HeldParticleOwnerThink shows them only then and removes them
-// the moment the owner turns the mouse or attacks (walking lined up well enough in testing; see
-// zm_held_particle_owner_hide_on_move). Each side's copies are hidden from the other in CheckTransmit.
+// the moment the owner moves, presses any key, turns the mouse or attacks (the user's call: the
+// flame only burns while standing still). Each side's copies are hidden from the other in CheckTransmit.
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "\"forward left up\" position of a held weapon's particle in its owner's view, from the eyes", "18 -1.2 -2.7");
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's view (the effect points along its up axis: +pitch tilts it forward, -roll tilts it left)", "54 0 -57");
 CConVar<int> g_cvarZMHeldParticleOwnerSegments("zm_held_particle_owner_segments", FCVAR_NONE, "How many copies of a held weapon's particle are chained along the blade in its owner's view", 2, true, 1, true, 5);
 CConVar<float> g_cvarZMHeldParticleOwnerSpacing("zm_held_particle_owner_spacing", FCVAR_NONE, "Distance between chained copies of a held weapon's particle in its owner's view", 18.0f, true, 1.0f, true, 100.0f);
 CConVar<float> g_cvarZMHeldParticleOwnerStillTime("zm_held_particle_owner_still_time", FCVAR_NONE, "How long the owner must hold still before their own copy of a held weapon's particle shows", 0.3f, true, 0.0f, true, 10.0f);
-CConVar<bool> g_cvarZMHeldParticleOwnerHideOnMove("zm_held_particle_owner_hide_on_move", FCVAR_NONE, "Also hide the owner's own copy of a held weapon's particle while they move or press any key (it's always hidden while turning the mouse or attacking)", false);
+CConVar<bool> g_cvarZMHeldParticleOwnerHideOnMove("zm_held_particle_owner_hide_on_move", FCVAR_NONE, "Also hide the owner's own copy of a held weapon's particle while they move or press any key (it's always hidden while turning the mouse or attacking)", true);
 
 struct HeldParticle_t
 {
@@ -2165,7 +2171,7 @@ static float HeldParticleOwnerThink()
 		const uint64 nButtons = pPawn->m_pMovementServices() ? pPawn->m_pMovementServices()->m_nButtons().m_pButtonStates()[0] : 0;
 		const bool bMoving = pPawn->m_vecAbsVelocity().Length() > 1.0f;
 
-		// Walking lines up well enough in practice; turning the mouse and swinging don't
+		// Turning the mouse and swinging always hide it; moving and other keys unless the cvar is off
 		const bool bHide = bLooked || (nButtons & (IN_ATTACK | IN_ATTACK2)) ||
 						   (g_cvarZMHeldParticleOwnerHideOnMove.Get() && (nButtons || bMoving));
 
