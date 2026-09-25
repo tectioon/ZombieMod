@@ -2009,17 +2009,19 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // beside the player, or at the feet when sent on the pawn), and as a temp effect it only reached
 // players standing right next to the owner.
 //
-// The owner gets a separate copy, shifted by these cvars (tunable live): in the owner's own view
-// the flame (a viewmodel effect) lands bottom right of the screen instead of on the first-person
-// blade. The copy has to stay parented directly to the weapon - the client only draws the owner's
-// viewmodel effect then (routed through an anchor entity it wasn't drawn at all) - and the
-// SetLocalOrigin/SetLocalAngles inputs do nothing. So it's snapped onto the attachment first, and a
-// tick later, with the attachment's server-side transform known from the particle's own abs
-// transform, it's teleported to the offset in that frame and re-parented with
-// SetParentAttachmentMaintainOffset (the flashlight's ClearParent/Teleport/SetParent sequence).
-// Each copy is hidden from the other side in CheckTransmit.
-CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "\"x y z\" offset of a held weapon's particle in its owner's own view, in the weapon attachment's frame", "0 0 0");
-CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's own view, relative to the weapon attachment", "0 0 0");
+// The owner gets separate copies placed along the first-person blade: in the owner's own view the
+// flame (a viewmodel effect) otherwise lands bottom right of the screen. They're positioned in the
+// owner's *view* frame (tunable live with these cvars, defaults estimated from a screenshot of the
+// Dark Souls sword), then parented to the weapon attachment with SetParentAttachmentMaintainOffset
+// (the flashlight's Teleport/SetParent sequence), so they follow the hand until the next re-send
+// re-bakes the offset. They must stay parented directly to the weapon - routed through an anchor
+// entity the owner's flame wasn't drawn at all - and the SetLocalOrigin/SetLocalAngles inputs do
+// nothing. An offset in the attachment's own frame worked but its axes don't match the view, so it
+// couldn't be tuned by eye. Each side's copies are hidden from the other in CheckTransmit.
+CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "\"forward left up\" position of a held weapon's particle in its owner's view, from the eyes", "18 -1.2 -2.7");
+CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's view (the effect points along its up axis: +pitch tilts it forward, -roll tilts it left)", "54 0 -57");
+CConVar<int> g_cvarZMHeldParticleOwnerSegments("zm_held_particle_owner_segments", FCVAR_NONE, "How many copies of a held weapon's particle are chained along the blade in its owner's view", 2, true, 1, true, 5);
+CConVar<float> g_cvarZMHeldParticleOwnerSpacing("zm_held_particle_owner_spacing", FCVAR_NONE, "Distance between chained copies of a held weapon's particle in its owner's view", 18.0f, true, 1.0f, true, 100.0f);
 
 struct HeldParticle_t
 {
@@ -2061,54 +2063,44 @@ static CParticleSystem* SpawnHeldParticle(CBaseEntity* pWeapon, const char* pszE
 	return particle;
 }
 
-static CParticleSystem* SpawnOffsetHeldParticle(CBaseEntity* pWeapon, const char* pszEffect, const char* pszAttachment)
+static void SpawnOwnerHeldParticles(CBaseEntity* pWeapon, CCSPlayerPawn* pOwner, int iOwnerSlot, const char* pszEffect, const char* pszAttachment)
 {
-	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
-	if (!particle)
-		return nullptr;
+	Vector vecOffset;
+	QAngle angOffset;
+	sscanf(g_cvarZMHeldParticleOwnerOffset.Get().String(), "%f %f %f", &vecOffset.x, &vecOffset.y, &vecOffset.z);
+	sscanf(g_cvarZMHeldParticleOwnerAngles.Get().String(), "%f %f %f", &angOffset.x, &angOffset.y, &angOffset.z);
 
-	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
-	particle->AcceptInput("SetParentAttachment", pszAttachment);
-	particle->m_iszEffectName(pszEffect);
-	particle->DispatchSpawn();
-	KillHeldParticleLater(particle);
+	// View frame: x forward, y left, z up
+	Vector vecForward, vecRight, vecUp;
+	AngleVectors(pOwner->m_angEyeAngles(), &vecForward, &vecRight, &vecUp);
+	auto ToWorld = [&](const Vector& v) { return vecForward * v.x - vecRight * v.y + vecUp * v.z; };
 
-	CHandle<CParticleSystem> hParticle = particle->GetHandle();
-	CHandle<CBaseEntity> hWeapon = pWeapon->GetHandle();
-	std::string strAttachment = pszAttachment;
+	Vector vecOffsetForward, vecOffsetRight, vecOffsetUp;
+	AngleVectors(angOffset, &vecOffsetForward, &vecOffsetRight, &vecOffsetUp);
+	Vector vecAxis = ToWorld(vecOffsetUp);
 
-	CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hParticle, hWeapon, strAttachment]() {
-		CParticleSystem* pParticle = hParticle.Get();
-		CBaseEntity* pWeapon = hWeapon.Get();
-		if (!pParticle || !pWeapon)
-			return -1.0f;
+	QAngle angles;
+	VectorAngles(ToWorld(vecOffsetForward), vecAxis, angles);
 
-		Vector vecOffset;
-		QAngle angOffset;
-		sscanf(g_cvarZMHeldParticleOwnerOffset.Get().String(), "%f %f %f", &vecOffset.x, &vecOffset.y, &vecOffset.z);
-		sscanf(g_cvarZMHeldParticleOwnerAngles.Get().String(), "%f %f %f", &angOffset.x, &angOffset.y, &angOffset.z);
+	Vector vecStart = pOwner->GetEyePosition() + ToWorld(vecOffset);
+	for (int i = 0; i < g_cvarZMHeldParticleOwnerSegments.Get(); i++)
+	{
+		CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+		if (!particle)
+			return;
 
-		// Attachment frame: x forward, y left, z up
-		Vector vecForward, vecRight, vecUp;
-		AngleVectors(pParticle->GetAbsRotation(), &vecForward, &vecRight, &vecUp);
-		auto ToWorld = [&](const Vector& v) { return vecForward * v.x - vecRight * v.y + vecUp * v.z; };
+		particle->m_bStartActive(true);
+		particle->m_iszEffectName(pszEffect);
+		particle->DispatchSpawn();
 
-		Vector vecOffsetForward, vecOffsetRight, vecOffsetUp;
-		AngleVectors(angOffset, &vecOffsetForward, &vecOffsetRight, &vecOffsetUp);
+		Vector vecOrigin = vecStart + vecAxis * (g_cvarZMHeldParticleOwnerSpacing.Get() * i);
+		particle->Teleport(&vecOrigin, &angles, nullptr);
+		particle->SetParent(pWeapon);
+		particle->AcceptInput("SetParentAttachmentMaintainOffset", pszAttachment);
 
-		Vector vecOrigin = pParticle->GetAbsOrigin() + ToWorld(vecOffset);
-		QAngle angles;
-		VectorAngles(ToWorld(vecOffsetForward), ToWorld(vecOffsetUp), angles);
-
-		pParticle->AcceptInput("ClearParent");
-		pParticle->Teleport(&vecOrigin, &angles, nullptr);
-		pParticle->SetParent(pWeapon);
-		pParticle->AcceptInput("SetParentAttachmentMaintainOffset", strAttachment.c_str());
-		pParticle->AcceptInput("Start");
-		return -1.0f;
-	});
-
-	return particle;
+		KillHeldParticleLater(particle);
+		g_vecHeldParticles.push_back({particle->GetHandle(), iOwnerSlot, true});
+	}
 }
 
 CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> - Show a particle on an entity attachment for a moment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
@@ -2141,8 +2133,7 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	if (pOthers)
 		g_vecHeldParticles.push_back({pOthers->GetHandle(), pOwnerController->GetPlayerSlot(), false});
 
-	if (CParticleSystem* pOwnerCopy = SpawnOffsetHeldParticle(pEnt, args[2], args[3]))
-		g_vecHeldParticles.push_back({pOwnerCopy->GetHandle(), pOwnerController->GetPlayerSlot(), true});
+	SpawnOwnerHeldParticles(pEnt, pOwner, pOwnerController->GetPlayerSlot(), args[2], args[3]);
 }
 
 // For EconomyShopPlugin's custom weapons. A client builds a weapon's first-person model the first
