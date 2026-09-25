@@ -2013,20 +2013,18 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // flame (a viewmodel effect) otherwise lands bottom right of the screen. They're positioned in the
 // owner's *view* frame (tunable live with these cvars, defaults estimated from a screenshot of the
 // Dark Souls sword), then parented to the weapon attachment with SetParentAttachmentMaintainOffset
-// (the flashlight's Teleport/SetParent sequence), so they follow the hand until the next re-send
-// re-bakes the offset. They must stay parented directly to the weapon - routed through an anchor
-// entity the owner's flame wasn't drawn at all - and the SetLocalOrigin/SetLocalAngles inputs do
-// nothing. An offset in the attachment's own frame worked but its axes don't match the view, so it
-// couldn't be tuned by eye. Each side's copies are hidden from the other in CheckTransmit.
+// (the flashlight's Teleport/SetParent sequence). They must stay parented directly to the weapon -
+// routed through an anchor entity the owner's flame wasn't drawn at all - and the
+// SetLocalOrigin/SetLocalAngles inputs do nothing. Since they follow the third-person hand, not the
+// first-person model (the server has no first-person entity in CS2), they only line up with the
+// blade while the owner stands completely still: HeldParticleOwnerThink shows them only then and
+// removes them the moment the owner moves, presses any key or turns the mouse. Each side's copies
+// are hidden from the other in CheckTransmit.
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "\"forward left up\" position of a held weapon's particle in its owner's view, from the eyes", "18 -1.2 -2.7");
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's view (the effect points along its up axis: +pitch tilts it forward, -roll tilts it left)", "54 0 -57");
 CConVar<int> g_cvarZMHeldParticleOwnerSegments("zm_held_particle_owner_segments", FCVAR_NONE, "How many copies of a held weapon's particle are chained along the blade in its owner's view", 2, true, 1, true, 5);
 CConVar<float> g_cvarZMHeldParticleOwnerSpacing("zm_held_particle_owner_spacing", FCVAR_NONE, "Distance between chained copies of a held weapon's particle in its owner's view", 18.0f, true, 1.0f, true, 100.0f);
-// 0: the weapon attachment (follows the third-person hand, so it tracks looking up/down but sways
-// with the walk/run arm animation); 1: the pawn itself (no sway, but only yaw follows the view - the
-// pitch offset is re-baked on the next re-send). Owner-only rendering of the pawn variant is
-// unconfirmed: routed through a plain anchor entity the flame wasn't drawn at all.
-CConVar<int> g_cvarZMHeldParticleOwnerParent("zm_held_particle_owner_parent", FCVAR_NONE, "What the owner's copies of a held weapon's particle follow: 0 = weapon attachment, 1 = the player", 0, true, 0, true, 1);
+CConVar<float> g_cvarZMHeldParticleOwnerStillTime("zm_held_particle_owner_still_time", FCVAR_NONE, "How long the owner must stand still before their own copy of a held weapon's particle shows", 0.3f, true, 0.0f, true, 10.0f);
 
 struct HeldParticle_t
 {
@@ -2035,6 +2033,20 @@ struct HeldParticle_t
 	bool bOwnerCopy;
 };
 std::vector<HeldParticle_t> g_vecHeldParticles;
+
+// The owner's side, per player slot: what C# last asked to show, and whether they're standing still
+struct HeldParticleOwnerState_t
+{
+	CHandle<CBaseEntity> hWeapon;
+	std::string strEffect;
+	std::string strAttachment;
+	float flLastRequest = -1.0f;
+	QAngle angLastEye;
+	float flStillSince = 0.0f;
+	float flLastSpawn = -100.0f;
+};
+HeldParticleOwnerState_t g_HeldParticleOwnerState[MAXPLAYERS];
+std::weak_ptr<CTimer> g_pHeldParticleOwnerTimer;
 
 void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity)
 {
@@ -2100,17 +2112,74 @@ static void SpawnOwnerHeldParticles(CBaseEntity* pWeapon, CCSPlayerPawn* pOwner,
 
 		Vector vecOrigin = vecStart + vecAxis * (g_cvarZMHeldParticleOwnerSpacing.Get() * i);
 		particle->Teleport(&vecOrigin, &angles, nullptr);
-		if (g_cvarZMHeldParticleOwnerParent.Get() == 1)
-			particle->SetParent(pOwner);
-		else
-		{
-			particle->SetParent(pWeapon);
-			particle->AcceptInput("SetParentAttachmentMaintainOffset", pszAttachment);
-		}
+		particle->SetParent(pWeapon);
+		particle->AcceptInput("SetParentAttachmentMaintainOffset", pszAttachment);
 
 		KillHeldParticleLater(particle);
 		g_vecHeldParticles.push_back({particle->GetHandle(), iOwnerSlot, true});
 	}
+}
+
+static void RemoveOwnerHeldParticles(int iOwnerSlot)
+{
+	for (const auto& held : g_vecHeldParticles)
+	{
+		CParticleSystem* pParticle = held.hParticle.Get();
+		if (pParticle && held.bOwnerCopy && held.iOwnerSlot == iOwnerSlot)
+		{
+			pParticle->AcceptInput("DestroyImmediately");
+			pParticle->Remove();
+		}
+	}
+}
+
+static float HeldParticleOwnerThink()
+{
+	const float flNow = GetGlobals()->curtime;
+	bool bAnyActive = false;
+
+	for (int i = 0; i < MAXPLAYERS; i++)
+	{
+		HeldParticleOwnerState_t& state = g_HeldParticleOwnerState[i];
+		if (state.flLastRequest < 0.0f)
+			continue;
+
+		CBaseEntity* pWeapon = state.hWeapon.Get();
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
+		CCSPlayerPawn* pPawn = pController ? pController->GetPlayerPawn() : nullptr;
+
+		// C# re-sends about every second while the weapon is out; a stale request means it's gone
+		if (!pWeapon || !pPawn || !pPawn->IsAlive() || flNow - state.flLastRequest > 1.5f || flNow < state.flLastRequest)
+		{
+			RemoveOwnerHeldParticles(i);
+			state.flLastRequest = -1.0f;
+			continue;
+		}
+		bAnyActive = true;
+
+		const QAngle angEye = pPawn->m_angEyeAngles();
+		const bool bLooked = angEye != state.angLastEye;
+		state.angLastEye = angEye;
+
+		const uint64 nButtons = pPawn->m_pMovementServices() ? pPawn->m_pMovementServices()->m_nButtons().m_pButtonStates()[0] : 0;
+		const bool bMoving = pPawn->m_vecAbsVelocity().Length() > 1.0f;
+
+		if (bLooked || nButtons || bMoving)
+		{
+			RemoveOwnerHeldParticles(i);
+			state.flStillSince = flNow;
+			state.flLastSpawn = -100.0f;
+			continue;
+		}
+
+		if (flNow - state.flStillSince >= g_cvarZMHeldParticleOwnerStillTime.Get() && flNow - state.flLastSpawn >= 0.9f)
+		{
+			SpawnOwnerHeldParticles(pWeapon, pPawn, i, state.strEffect.c_str(), state.strAttachment.c_str());
+			state.flLastSpawn = flNow;
+		}
+	}
+
+	return bAnyActive ? 0.05f : -1.0f;
 }
 
 CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_name> - Show a particle on an entity attachment for a moment", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
@@ -2140,10 +2209,70 @@ CON_COMMAND_F(zm_dispatch_particle, "<entity_index> <effect_name> <attachment_na
 	if (!pOwnerController)
 		return;
 
+	const int iSlot = pOwnerController->GetPlayerSlot();
 	if (pOthers)
-		g_vecHeldParticles.push_back({pOthers->GetHandle(), pOwnerController->GetPlayerSlot(), false});
+		g_vecHeldParticles.push_back({pOthers->GetHandle(), iSlot, false});
 
-	SpawnOwnerHeldParticles(pEnt, pOwner, pOwnerController->GetPlayerSlot(), args[2], args[3]);
+	// The owner's own copies are shown by HeldParticleOwnerThink, only while they stand still
+	HeldParticleOwnerState_t& state = g_HeldParticleOwnerState[iSlot];
+	if (state.hWeapon.Get() != pEnt || state.flLastRequest < 0.0f)
+	{
+		state.flStillSince = GetGlobals()->curtime;
+		state.flLastSpawn = -100.0f;
+		state.angLastEye = pOwner->m_angEyeAngles();
+	}
+	state.hWeapon = pEnt->GetHandle();
+	state.strEffect = args[2];
+	state.strAttachment = args[3];
+	state.flLastRequest = GetGlobals()->curtime;
+
+	if (g_pHeldParticleOwnerTimer.expired())
+		g_pHeldParticleOwnerTimer = CTimer::Create(0.0f, TIMERFLAG_MAP, HeldParticleOwnerThink);
+}
+
+// For EconomyShopPlugin's custom weapons that shouldn't be inspected (the Dark Souls sword: its
+// first-person flame can't follow the inspect animation). IN_LOOK_AT_WEAPON is stripped from the
+// owner's usercmds in Detour_ProcessUsercmds while one of these weapons is their active weapon.
+std::vector<CHandle<CBaseEntity>> g_vecNoInspectWeapons;
+
+bool ZM_IsInspectBlocked(CCSPlayerController* pController)
+{
+	if (g_vecNoInspectWeapons.empty())
+		return false;
+
+	CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+	if (!pPawn || !pPawn->IsAlive() || !pPawn->m_pWeaponServices())
+		return false;
+
+	CBasePlayerWeapon* pActive = pPawn->m_pWeaponServices()->m_hActiveWeapon().Get();
+	if (!pActive)
+		return false;
+
+	for (const auto& hWeapon : g_vecNoInspectWeapons)
+		if (hWeapon.Get() == pActive)
+			return true;
+
+	return false;
+}
+
+CON_COMMAND_F(zm_block_inspect, "<weapon_index> - Block weapon inspect while this weapon is held", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("zm_block_inspect: usage: zm_block_inspect <weapon_index>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS)
+		return;
+
+	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pEnt || V_strncmp(pEnt->GetClassname(), "weapon_", 7))
+		return;
+
+	std::erase_if(g_vecNoInspectWeapons, [](const CHandle<CBaseEntity>& hWeapon) { return !hWeapon.Get(); });
+	g_vecNoInspectWeapons.push_back(pEnt->GetHandle());
 }
 
 // For EconomyShopPlugin's custom weapons. A client builds a weapon's first-person model the first

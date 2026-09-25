@@ -677,6 +677,31 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 		}
 	}
 
+	// Custom weapons registered with zm_block_inspect: drop the inspect key while one is held
+	if (g_cvarZMEnable.Get() && ZM_IsInspectBlocked(pController))
+	{
+		for (int i = 0; i < numcmds; i++)
+		{
+			auto pBase = cmds[i].cmd.mutable_base();
+			if (pBase->has_buttons_pb())
+			{
+				auto pButtons = pBase->mutable_buttons_pb();
+				pButtons->set_buttonstate1(pButtons->buttonstate1() & ~IN_LOOK_AT_WEAPON);
+				pButtons->set_buttonstate2(pButtons->buttonstate2() & ~IN_LOOK_AT_WEAPON);
+				pButtons->set_buttonstate3(pButtons->buttonstate3() & ~IN_LOOK_AT_WEAPON);
+			}
+
+			auto subtickMoves = pBase->mutable_subtick_moves();
+			for (auto iterator = subtickMoves->begin(); iterator != subtickMoves->end();)
+			{
+				if (iterator->button() == IN_LOOK_AT_WEAPON)
+					iterator = subtickMoves->erase(iterator);
+				else
+					iterator++;
+			}
+		}
+	}
+
 	int iSlot = pController->GetPlayerSlot();
 	if (iSlot >= 0 && iSlot <= MAXPLAYERS && g_bRocketLauncherActive[iSlot])
 	{
