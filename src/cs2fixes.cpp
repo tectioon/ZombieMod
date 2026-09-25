@@ -1066,7 +1066,7 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 		if (pGlowModel)
 			pInfo->m_pTransmitEntity->Clear(pGlowModel->entindex());
 
-		// Held-weapon particles are hidden from their owner (see zm_dispatch_particle)
+		// Held-weapon particles: the owner sees only their own offset copy (see zm_dispatch_particle)
 		if (g_cvarZMEnable.Get())
 			ZM_FilterHeldParticleTransmit(pInfo->m_nPlayerSlot.Get(), pInfo->m_pTransmitEntity);
 	}
