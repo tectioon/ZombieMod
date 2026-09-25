@@ -2017,14 +2017,15 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 // routed through an anchor entity the owner's flame wasn't drawn at all - and the
 // SetLocalOrigin/SetLocalAngles inputs do nothing. Since they follow the third-person hand, not the
 // first-person model (the server has no first-person entity in CS2), they only line up with the
-// blade while the owner stands completely still: HeldParticleOwnerThink shows them only then and
-// removes them the moment the owner moves, presses any key or turns the mouse. Each side's copies
-// are hidden from the other in CheckTransmit.
+// blade while the owner holds still: HeldParticleOwnerThink shows them only then and removes them
+// the moment the owner turns the mouse or attacks (walking lined up well enough in testing; see
+// zm_held_particle_owner_hide_on_move). Each side's copies are hidden from the other in CheckTransmit.
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offset", FCVAR_NONE, "\"forward left up\" position of a held weapon's particle in its owner's view, from the eyes", "18 -1.2 -2.7");
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's view (the effect points along its up axis: +pitch tilts it forward, -roll tilts it left)", "54 0 -57");
 CConVar<int> g_cvarZMHeldParticleOwnerSegments("zm_held_particle_owner_segments", FCVAR_NONE, "How many copies of a held weapon's particle are chained along the blade in its owner's view", 2, true, 1, true, 5);
 CConVar<float> g_cvarZMHeldParticleOwnerSpacing("zm_held_particle_owner_spacing", FCVAR_NONE, "Distance between chained copies of a held weapon's particle in its owner's view", 18.0f, true, 1.0f, true, 100.0f);
-CConVar<float> g_cvarZMHeldParticleOwnerStillTime("zm_held_particle_owner_still_time", FCVAR_NONE, "How long the owner must stand still before their own copy of a held weapon's particle shows", 0.3f, true, 0.0f, true, 10.0f);
+CConVar<float> g_cvarZMHeldParticleOwnerStillTime("zm_held_particle_owner_still_time", FCVAR_NONE, "How long the owner must hold still before their own copy of a held weapon's particle shows", 0.3f, true, 0.0f, true, 10.0f);
+CConVar<bool> g_cvarZMHeldParticleOwnerHideOnMove("zm_held_particle_owner_hide_on_move", FCVAR_NONE, "Also hide the owner's own copy of a held weapon's particle while they move or press any key (it's always hidden while turning the mouse or attacking)", false);
 
 struct HeldParticle_t
 {
@@ -2164,7 +2165,11 @@ static float HeldParticleOwnerThink()
 		const uint64 nButtons = pPawn->m_pMovementServices() ? pPawn->m_pMovementServices()->m_nButtons().m_pButtonStates()[0] : 0;
 		const bool bMoving = pPawn->m_vecAbsVelocity().Length() > 1.0f;
 
-		if (bLooked || nButtons || bMoving)
+		// Walking lines up well enough in practice; turning the mouse and swinging don't
+		const bool bHide = bLooked || (nButtons & (IN_ATTACK | IN_ATTACK2)) ||
+						   (g_cvarZMHeldParticleOwnerHideOnMove.Get() && (nButtons || bMoving));
+
+		if (bHide)
 		{
 			RemoveOwnerHeldParticles(i);
 			state.flStillSince = flNow;
