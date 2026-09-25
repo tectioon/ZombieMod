@@ -2022,6 +2022,11 @@ CConVar<CUtlString> g_cvarZMHeldParticleOwnerOffset("zm_held_particle_owner_offs
 CConVar<CUtlString> g_cvarZMHeldParticleOwnerAngles("zm_held_particle_owner_angles", FCVAR_NONE, "\"pitch yaw roll\" of a held weapon's particle in its owner's view (the effect points along its up axis: +pitch tilts it forward, -roll tilts it left)", "54 0 -57");
 CConVar<int> g_cvarZMHeldParticleOwnerSegments("zm_held_particle_owner_segments", FCVAR_NONE, "How many copies of a held weapon's particle are chained along the blade in its owner's view", 2, true, 1, true, 5);
 CConVar<float> g_cvarZMHeldParticleOwnerSpacing("zm_held_particle_owner_spacing", FCVAR_NONE, "Distance between chained copies of a held weapon's particle in its owner's view", 18.0f, true, 1.0f, true, 100.0f);
+// 0: the weapon attachment (follows the third-person hand, so it tracks looking up/down but sways
+// with the walk/run arm animation); 1: the pawn itself (no sway, but only yaw follows the view - the
+// pitch offset is re-baked on the next re-send). Owner-only rendering of the pawn variant is
+// unconfirmed: routed through a plain anchor entity the flame wasn't drawn at all.
+CConVar<int> g_cvarZMHeldParticleOwnerParent("zm_held_particle_owner_parent", FCVAR_NONE, "What the owner's copies of a held weapon's particle follow: 0 = weapon attachment, 1 = the player", 0, true, 0, true, 1);
 
 struct HeldParticle_t
 {
@@ -2095,8 +2100,13 @@ static void SpawnOwnerHeldParticles(CBaseEntity* pWeapon, CCSPlayerPawn* pOwner,
 
 		Vector vecOrigin = vecStart + vecAxis * (g_cvarZMHeldParticleOwnerSpacing.Get() * i);
 		particle->Teleport(&vecOrigin, &angles, nullptr);
-		particle->SetParent(pWeapon);
-		particle->AcceptInput("SetParentAttachmentMaintainOffset", pszAttachment);
+		if (g_cvarZMHeldParticleOwnerParent.Get() == 1)
+			particle->SetParent(pOwner);
+		else
+		{
+			particle->SetParent(pWeapon);
+			particle->AcceptInput("SetParentAttachmentMaintainOffset", pszAttachment);
+		}
 
 		KillHeldParticleLater(particle);
 		g_vecHeldParticles.push_back({particle->GetHandle(), iOwnerSlot, true});
