@@ -2291,7 +2291,7 @@ CON_COMMAND_F(zm_block_inspect, "<weapon_index> - Block weapon inspect while thi
 // weapon immediately (auto-switch to a better weapon), so the model has to be set in the same call
 // that creates it, before any snapshot reaches a client. A knife the player already carries is
 // removed first, since a player can only hold one.
-CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> - Give a player a weapon with a custom model", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> [vdata_subclass] - Give a player a weapon with a custom model", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 4)
 	{
@@ -2340,6 +2340,19 @@ CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> - Give a
 		V_snprintf(szDefIndex, sizeof(szDefIndex), "%d", pInfo->m_iItemDefinitionIndex);
 		pWeapon->AcceptInput("ChangeSubclass", szDefIndex);
 		pWeapon->m_AttributeManager().m_Item().m_iItemDefinitionIndex = pInfo->m_iItemDefinitionIndex;
+	}
+
+	// Optional 5th arg: a weapons.vdata class of its own that frostg adds on top of <classname>
+	// (e.g. weapon_knife_flower on weapon_knife) - these have no item definition index, so the
+	// subclass is switched by name. Logged either way while it's new: whether the input takes a name
+	// (and not only an item definition index) is what the first live test has to show.
+	if (args.ArgC() >= 5)
+	{
+		CEntitySubclassVDataBase* pVDataBefore = pWeapon->GetVData();
+		pWeapon->AcceptInput("ChangeSubclass", args[4]);
+		CEntitySubclassVDataBase* pVDataAfter = pWeapon->GetVData();
+		ConMsg("zm_give_custom_weapon: subclass %s on %s %s (vdata %p -> %p, clip %d)\n", args[4], args[2],
+			   pVDataAfter != pVDataBefore ? "APPLIED" : "NOT applied", pVDataBefore, pVDataAfter, pWeapon->m_iClip1());
 	}
 
 	pWeapon->SetModel(args[3]);

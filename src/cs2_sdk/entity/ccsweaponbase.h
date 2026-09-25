@@ -95,6 +95,7 @@ public:
 	DECLARE_SCHEMA_CLASS(CBasePlayerWeapon)
 	SCHEMA_FIELD(int, m_nNextPrimaryAttackTick)
 	SCHEMA_FIELD(int, m_nNextSecondaryAttackTick)
+	SCHEMA_FIELD(int32, m_iClip1)
 
 	CCSWeaponBaseVData* GetWeaponVData() { return (CCSWeaponBaseVData*)GetVData(); }
 
