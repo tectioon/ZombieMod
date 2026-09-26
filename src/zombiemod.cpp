@@ -2099,7 +2099,10 @@ CON_COMMAND_F(zm_attach_visual, "<entity_index> <model_path> <max_duration> - Sh
 	pProp->CollisionRulesChanged();
 
 	pProp->SetParent(pEnt);
-	pEnt->m_nRenderMode = kRenderNone;
+	// kRenderNone alone left the stock HE grenade showing along with the bottle; a fully transparent
+	// render color is what hides a model on CS2 clients (the usual "invisible player" approach)
+	pEnt->m_nRenderMode = kRenderTransAlpha;
+	pEnt->m_clrRender = Color(255, 255, 255, 0);
 
 	CHandle<CBaseModelEntity> hProp = pProp->GetHandle();
 	CHandle<CBaseEntity> hParent = pEnt->GetHandle();
@@ -2119,6 +2122,46 @@ CON_COMMAND_F(zm_attach_visual, "<entity_index> <model_path> <max_duration> - Sh
 
 		return 0.1f;
 	});
+}
+
+// For EconomyShopPlugin's Cirno P90: the ice tracer set in weapons.vdata never showed in live
+// testing, so C# draws it on every shot instead, the same way as the leader tracer (leader.cpp):
+// an info_particle_system on the weapon's "muzzle_flash" attachment with control point 1 at the
+// bullet's impact.
+CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] - Draw a tracer from a weapon's muzzle to a point", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 6)
+	{
+		ConMsg("zm_weapon_tracer: usage: zm_weapon_tracer <weapon_index> <x> <y> <z> <effect> [lifetime]\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS)
+		return;
+
+	CBaseEntity* pWeapon = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pWeapon || V_strncmp(pWeapon->GetClassname(), "weapon_", 7))
+		return;
+
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return;
+
+	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
+	particle->AcceptInput("SetParentAttachment", "muzzle_flash");
+
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	pKeyValues->SetString("effect_name", args[5]);
+	pKeyValues->SetInt("data_cp", 1);
+	pKeyValues->SetVector("data_cp_value", Vector(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f)));
+	pKeyValues->SetBool("start_active", true);
+
+	particle->DispatchSpawn(pKeyValues);
+
+	float flLifetime = args.ArgC() >= 7 ? V_StringToFloat32(args[6], 0.5f) : 0.5f;
+	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", flLifetime);
+	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", flLifetime + 0.02f);
 }
 
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
