@@ -2007,6 +2007,58 @@ CON_COMMAND_F(zm_spawn_particle, "<x> <y> <z> <effect_name> <duration> - Spawn a
 	});
 }
 
+// For EconomyShopPlugin's Magic Potion (the HE grenade): a trail that flies with the thrown
+// hegrenade_projectile. Parented to the entity (no attachment) and removed as soon as the entity is
+// gone - a child left behind by a detonated grenade would keep emitting on the spot - or after
+// max_duration at the latest.
+CON_COMMAND_F(zm_attach_particle, "<entity_index> <effect_name> <max_duration> - Keep a particle on an entity while it exists", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 4)
+	{
+		ConMsg("zm_attach_particle: usage: zm_attach_particle <entity_index> <effect_name> <max_duration>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS)
+		return;
+
+	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pEnt)
+		return;
+
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return;
+
+	Vector vecOrigin = pEnt->GetAbsOrigin();
+	particle->Teleport(&vecOrigin, nullptr, nullptr);
+	particle->AcceptInput("SetParent", "!activator", pEnt, nullptr);
+	particle->m_bStartActive(true);
+	particle->m_iszEffectName(args[2]);
+	particle->DispatchSpawn();
+
+	CHandle<CParticleSystem> hParticle = particle->GetHandle();
+	CHandle<CBaseEntity> hParent = pEnt->GetHandle();
+	auto flRemaining = std::make_shared<float>(V_StringToFloat32(args[3], 10.0f));
+
+	CTimer::Create(0.1f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hParticle, hParent, flRemaining]() {
+		CParticleSystem* pParticle = hParticle.Get();
+		if (!pParticle)
+			return -1.0f;
+
+		*flRemaining -= 0.1f;
+		if (!hParent.Get() || *flRemaining <= 0.0f)
+		{
+			pParticle->AcceptInput("DestroyImmediately");
+			pParticle->Remove();
+			return -1.0f;
+		}
+
+		return 0.1f;
+	});
+}
+
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
 // sword's blade flame), re-sent by C# about every second since the effect stops itself.
 // A short-lived info_particle_system parented to the weapon's attachment, the same way the leader
