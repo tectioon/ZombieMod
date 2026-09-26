@@ -2182,10 +2182,17 @@ CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] 
 	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
 	particle->AcceptInput("SetParentAttachment", "muzzle_flash");
 
+	// Face the shot, as the game's own tracers do: the attachment's own orientation on the world model
+	// isn't the shot direction, and the tracer's local-space offsets then drew it behind the shooter too
+	Vector vecImpact(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f));
+	QAngle angShot;
+	VectorAngles(vecImpact - pWeapon->GetAbsOrigin(), angShot);
+	particle->Teleport(nullptr, &angShot, nullptr);
+
 	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
 	pKeyValues->SetString("effect_name", args[5]);
 	pKeyValues->SetInt("data_cp", 1);
-	pKeyValues->SetVector("data_cp_value", Vector(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f)));
+	pKeyValues->SetVector("data_cp_value", vecImpact);
 	pKeyValues->SetBool("start_active", true);
 
 	particle->DispatchSpawn(pKeyValues);
