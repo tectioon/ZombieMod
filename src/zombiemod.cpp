@@ -2059,6 +2059,14 @@ CON_COMMAND_F(zm_attach_particle, "<entity_index> <effect_name> <max_duration> -
 	});
 }
 
+// zm_attach_visual's props by the entity they sit on, for zm_remove_attached_visual
+struct AttachedVisual_t
+{
+	CHandle<CBaseEntity> hParent;
+	CHandle<CBaseModelEntity> hProp;
+};
+std::vector<AttachedVisual_t> g_vecAttachedVisuals;
+
 // For EconomyShopPlugin's Magic Potion: shows a model on a physics entity without touching the entity
 // itself. Swapping the thrown hegrenade_projectile's own model (zm_set_entity_model) made the bottle
 // jump around along the flight path - the new model's physics replaced the grenade's mid-flight. So
@@ -2108,6 +2116,9 @@ CON_COMMAND_F(zm_attach_visual, "<entity_index> <model_path> <max_duration> - Sh
 	CHandle<CBaseEntity> hParent = pEnt->GetHandle();
 	auto flRemaining = std::make_shared<float>(V_StringToFloat32(args[3], 10.0f));
 
+	std::erase_if(g_vecAttachedVisuals, [](const AttachedVisual_t& attached) { return !attached.hProp.Get(); });
+	g_vecAttachedVisuals.push_back({hParent, hProp});
+
 	CTimer::Create(0.1f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hProp, hParent, flRemaining]() {
 		CBaseModelEntity* pProp = hProp.Get();
 		if (!pProp)
@@ -2122,6 +2133,26 @@ CON_COMMAND_F(zm_attach_visual, "<entity_index> <model_path> <max_duration> - Sh
 
 		return 0.1f;
 	});
+}
+
+// A thrown HE grenade stays around for a moment after it explodes, and the potion bottle on it with it
+// (seen hovering over the blast spot) - EconomyShopPlugin removes it right at the explosion with this.
+CON_COMMAND_F(zm_remove_attached_visual, "<entity_index> - Remove the models zm_attach_visual put on an entity", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("zm_remove_attached_visual: usage: zm_remove_attached_visual <entity_index>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	for (const auto& attached : g_vecAttachedVisuals)
+	{
+		CBaseEntity* pParent = attached.hParent.Get();
+		CBaseModelEntity* pProp = attached.hProp.Get();
+		if (pProp && pParent && pParent->entindex() == iIndex)
+			pProp->Remove();
+	}
 }
 
 // For EconomyShopPlugin's Cirno P90: the ice tracer set in weapons.vdata never showed in live
