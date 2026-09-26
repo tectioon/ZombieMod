@@ -2059,6 +2059,68 @@ CON_COMMAND_F(zm_attach_particle, "<entity_index> <effect_name> <max_duration> -
 	});
 }
 
+// For EconomyShopPlugin's Magic Potion: shows a model on a physics entity without touching the entity
+// itself. Swapping the thrown hegrenade_projectile's own model (zm_set_entity_model) made the bottle
+// jump around along the flight path - the new model's physics replaced the grenade's mid-flight. So
+// the projectile keeps its stock model and physics but stops rendering, and a non-solid prop_dynamic
+// with the given model is parented to it; the prop goes when the entity does (or after max_duration).
+CON_COMMAND_F(zm_attach_visual, "<entity_index> <model_path> <max_duration> - Show a model in place of an entity's own", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 4)
+	{
+		ConMsg("zm_attach_visual: usage: zm_attach_visual <entity_index> <model_path> <max_duration>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS)
+		return;
+
+	CBaseModelEntity* pEnt = (CBaseModelEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pEnt)
+		return;
+
+	CBaseModelEntity* pProp = CreateEntityByName<CBaseModelEntity>("prop_dynamic");
+	if (!pProp)
+		return;
+
+	CEntityKeyValues* pPropKeyValues = new CEntityKeyValues();
+	pPropKeyValues->SetString("model", args[2]);
+	pProp->DispatchSpawn(pPropKeyValues);
+
+	Vector vecOrigin = pEnt->GetAbsOrigin();
+	QAngle angRotation = pEnt->GetAbsRotation();
+	pProp->Teleport(&vecOrigin, &angRotation, nullptr);
+
+	// Purely cosmetic, same as zm_spawn_prop
+	pProp->SetCollisionGroup(COLLISION_GROUP_DEBRIS);
+	if (pProp->m_pCollision())
+		pProp->m_pCollision->m_nSolidType = SOLID_NONE;
+	pProp->CollisionRulesChanged();
+
+	pProp->SetParent(pEnt);
+	pEnt->m_nRenderMode = kRenderNone;
+
+	CHandle<CBaseModelEntity> hProp = pProp->GetHandle();
+	CHandle<CBaseEntity> hParent = pEnt->GetHandle();
+	auto flRemaining = std::make_shared<float>(V_StringToFloat32(args[3], 10.0f));
+
+	CTimer::Create(0.1f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hProp, hParent, flRemaining]() {
+		CBaseModelEntity* pProp = hProp.Get();
+		if (!pProp)
+			return -1.0f;
+
+		*flRemaining -= 0.1f;
+		if (!hParent.Get() || *flRemaining <= 0.0f)
+		{
+			pProp->Remove();
+			return -1.0f;
+		}
+
+		return 0.1f;
+	});
+}
+
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
 // sword's blade flame), re-sent by C# about every second since the effect stops itself.
 // A short-lived info_particle_system parented to the weapon's attachment, the same way the leader
