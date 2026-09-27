@@ -2250,10 +2250,6 @@ struct HeldParticleOwnerState_t
 HeldParticleOwnerState_t g_HeldParticleOwnerState[MAXPLAYERS];
 std::weak_ptr<CTimer> g_pHeldParticleOwnerTimer;
 
-// Screen-space effects only one player sees (zm_hitmarker), kept apart from the held-weapon list so
-// the sword flame's cleanup (RemoveOwnerHeldParticles) never touches them
-std::vector<HeldParticle_t> g_vecOwnerOnlyParticles;
-
 void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity)
 {
 	for (const auto& held : g_vecHeldParticles)
@@ -2262,23 +2258,18 @@ void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransm
 		if (pParticle && (held.iOwnerSlot == iPlayerSlot) != held.bOwnerCopy)
 			pTransmitEntity->Clear(pParticle->entindex());
 	}
-
-	for (const auto& owned : g_vecOwnerOnlyParticles)
-	{
-		CParticleSystem* pParticle = owned.hParticle.Get();
-		if (pParticle && owned.iOwnerSlot != iPlayerSlot)
-			pTransmitEntity->Clear(pParticle->entindex());
-	}
 }
 
 // For EconomyShopPlugin's hit markers: a screen-space particle (drawn at the crosshair, from the N4A
-// pack) shown only to one player - an info_particle_system at their eyes, hidden from everyone else in
-// CheckTransmit the same way as the sword flame's owner copies.
-CON_COMMAND_F(zm_hitmarker, "<player_slot> <effect> [lifetime] - Show a screen-space particle to one player only", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+// pack) plus a sound, both for one player only. Sent the way the round-win overlays are
+// (DispatchParticle with PATTACH_MAIN_VIEW, a screen-space effect too) and the chat "tick" is
+// (EmitSoundFilter with a CSingleRecipientFilter). An info_particle_system at the player's eyes
+// showed nothing: a screen-space effect reads its control point as a screen position.
+CON_COMMAND_F(zm_hitmarker, "<player_slot> <effect> [sound] - Show a screen-space particle (and play a sound) to one player only", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 3)
 	{
-		ConMsg("zm_hitmarker: usage: zm_hitmarker <player_slot> <effect> [lifetime]\n");
+		ConMsg("zm_hitmarker: usage: zm_hitmarker <player_slot> <effect> [sound]\n");
 		return;
 	}
 
@@ -2286,27 +2277,16 @@ CON_COMMAND_F(zm_hitmarker, "<player_slot> <effect> [lifetime] - Show a screen-s
 	CCSPlayerController* pController = iSlot >= 0 && iSlot < MAXPLAYERS ? CCSPlayerController::FromSlot(iSlot) : nullptr;
 	CCSPlayerPawn* pPawn = pController ? pController->GetPlayerPawn() : nullptr;
 	if (!pPawn)
+	{
+		ConMsg("zm_hitmarker: no pawn for slot %d\n", iSlot);
 		return;
+	}
 
-	std::erase_if(g_vecOwnerOnlyParticles, [](const HeldParticle_t& owned) { return !owned.hParticle.Get(); });
+	CSingleRecipientFilter filter(iSlot);
+	pPawn->DispatchParticle(args[2], &filter, PATTACH_MAIN_VIEW);
 
-	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
-	if (!particle)
-		return;
-
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
-	pKeyValues->SetString("effect_name", args[2]);
-	pKeyValues->SetBool("start_active", true);
-	particle->DispatchSpawn(pKeyValues);
-
-	Vector vecOrigin = pPawn->GetEyePosition();
-	particle->Teleport(&vecOrigin, nullptr, nullptr);
-
-	float flLifetime = args.ArgC() >= 4 ? V_StringToFloat32(args[3], 0.4f) : 0.4f;
-	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", flLifetime);
-	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", flLifetime + 0.02f);
-
-	g_vecOwnerOnlyParticles.push_back({particle->GetHandle(), iSlot, true});
+	if (args.ArgC() >= 4 && args[3][0])
+		pController->EmitSoundFilter(filter, args[3]);
 }
 
 static void KillHeldParticleLater(CParticleSystem* pParticle)
