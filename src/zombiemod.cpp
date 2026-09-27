@@ -2250,12 +2250,23 @@ struct HeldParticleOwnerState_t
 HeldParticleOwnerState_t g_HeldParticleOwnerState[MAXPLAYERS];
 std::weak_ptr<CTimer> g_pHeldParticleOwnerTimer;
 
+// World particles only one player sees (zm_owner_particle), kept apart from the held-weapon list so
+// the sword flame's cleanup (RemoveOwnerHeldParticles) never touches them
+std::vector<HeldParticle_t> g_vecOwnerOnlyParticles;
+
 void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity)
 {
 	for (const auto& held : g_vecHeldParticles)
 	{
 		CParticleSystem* pParticle = held.hParticle.Get();
 		if (pParticle && (held.iOwnerSlot == iPlayerSlot) != held.bOwnerCopy)
+			pTransmitEntity->Clear(pParticle->entindex());
+	}
+
+	for (const auto& owned : g_vecOwnerOnlyParticles)
+	{
+		CParticleSystem* pParticle = owned.hParticle.Get();
+		if (pParticle && owned.iOwnerSlot != iPlayerSlot)
 			pTransmitEntity->Clear(pParticle->entindex());
 	}
 }
@@ -2287,6 +2298,49 @@ CON_COMMAND_F(zm_hitmarker, "<player_slot> <effect> [sound] - Show a screen-spac
 
 	if (args.ArgC() >= 4 && args[3][0])
 		pController->EmitSoundFilter(filter, args[3]);
+}
+
+// For EconomyShopPlugin's damage numbers (HanZombiePlague's Fortnite digits, one particle per digit):
+// an ordinary world particle at a position, like zm_spawn_particle, but hidden from everyone except
+// one player in CheckTransmit - the same way HanHitMarkS2 limits its digits to the attacker.
+CON_COMMAND_F(zm_owner_particle, "<player_slot> <effect> <x> <y> <z> [lifetime] - Play a particle at a position that only one player sees", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 6)
+	{
+		ConMsg("zm_owner_particle: usage: zm_owner_particle <player_slot> <effect> <x> <y> <z> [lifetime]\n");
+		return;
+	}
+
+	int iSlot = V_StringToInt32(args[1], -1);
+	if (iSlot < 0 || iSlot >= MAXPLAYERS || !CCSPlayerController::FromSlot(iSlot))
+		return;
+
+	std::erase_if(g_vecOwnerOnlyParticles, [](const HeldParticle_t& owned) { return !owned.hParticle.Get(); });
+
+	Vector origin(V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f), V_StringToFloat32(args[5], 0.0f));
+
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return;
+
+	particle->m_bStartActive(true);
+	particle->m_iszEffectName(args[2]);
+	particle->Teleport(&origin, nullptr, nullptr);
+	particle->DispatchSpawn();
+
+	// Hidden from the others from the first CheckTransmit on - this frame's snapshot is taken after the command
+	g_vecOwnerOnlyParticles.push_back({particle->GetHandle(), iSlot, true});
+
+	float flLifetime = args.ArgC() >= 7 ? V_StringToFloat32(args[6], 1.0f) : 1.0f;
+	CHandle<CParticleSystem> hParticle = particle->GetHandle();
+
+	CTimer::Create(flLifetime, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hParticle]() {
+		CParticleSystem* pParticle = hParticle.Get();
+		if (pParticle)
+			pParticle->Remove();
+
+		return -1.0f;
+	});
 }
 
 static void KillHeldParticleLater(CParticleSystem* pParticle)
