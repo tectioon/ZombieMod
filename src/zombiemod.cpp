@@ -72,6 +72,8 @@ CConVar<CUtlString> g_cvarZMHumanWinOverlayParticle("zm_human_win_overlay_partic
 CConVar<CUtlString> g_cvarZMZombieWinOverlayParticle("zm_zombie_win_overlay_particle", FCVAR_NONE, "Screenspace particle to display when zombie win", "");
 CConVar<int> g_cvarZMInfectSpawnType("zm_infect_spawn_type", FCVAR_NONE, "Type of Mother Zombies Spawn [0 = MZ spawn where they stand, 1 = MZ get teleported back to spawn on being picked]", (int)EZMSpawnType::ZM_RESPAWN, true, 0, true, 1);
 CConVar<bool> g_cvarZMInfectSpawnWarning("zm_infect_spawn_warning", FCVAR_NONE, "Whether to warn players of zombies spawning between humans", true);
+// EconomyShopPlugin draws its own countdown / first infection card (RoundHud.cs) and turns this off
+CConVar<bool> g_cvarZMInfectHudText("zm_infect_hud_text", FCVAR_NONE, "Whether to show the infection countdown and 'first infection has started' as centre text", true);
 CConVar<float> g_cvarZMKnockbackScale("zm_knockback_scale", FCVAR_NONE, "Global knockback scale", 5.0f);
 CConVar<float> g_cvarZMMoanInterval("zm_sounds_moan_interval", FCVAR_NONE, "How often in seconds should zombies moan", 30.0f, true, 0.0f, false, 0.0f);
 CConVar<bool> g_cvarZMInfectShake("zm_infect_shake", FCVAR_NONE, "Whether to shake a player's view on infect", true);
@@ -769,7 +771,8 @@ void ZM_InitialInfection()
 	if (g_cvarZMRespawnDelay.Get() < 0.0f)
 		g_bRespawnEnabled = false;
 
-	SendHudMessageAll(4, EHudPriority::InfectionCountdown, "First infection has started!");
+	if (g_cvarZMInfectHudText.Get())
+		SendHudMessageAll(4, EHudPriority::InfectionCountdown, "First infection has started!");
 	ClientPrintAll(HUD_PRINTTALK, ZM_PREFIX "First infection has started! Good luck, survivors!");
 	g_ZMRoundState = EZMRoundState::POST_INFECTION;
 }
@@ -812,7 +815,8 @@ void ZM_StartInitialCountdown()
 			else
 				V_snprintf(classicSpawnMsg, sizeof(classicSpawnMsg), "");
 
-			SendHudMessageAll(2, EHudPriority::InfectionCountdown, "%sFirst infection in <span color='#00FF00'>%i %s</span>!", classicSpawnMsg, g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
+			if (g_cvarZMInfectHudText.Get())
+				SendHudMessageAll(2, EHudPriority::InfectionCountdown, "%sFirst infection in <span color='#00FF00'>%i %s</span>!", classicSpawnMsg, g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
 
 			if (g_iInfectionCountDown % 5 == 0)
 				ClientPrintAll(HUD_PRINTTALK, "%sFirst infection in \7%i %s\1!", ZM_PREFIX, g_iInfectionCountDown, g_iInfectionCountDown == 1 ? "second" : "seconds");
