@@ -2204,8 +2204,7 @@ CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] 
 {
 	if (args.ArgC() < 6)
 	{
-		ConMsg("zm_weapon_tracer: usage: zm_weapon_tracer <weapon_index> <x> <y> <z> <effect> [lifetime]
-");
+		ConMsg("zm_weapon_tracer: usage: zm_weapon_tracer <weapon_index> <x> <y> <z> <effect> [lifetime]\n");
 		return;
 	}
 
