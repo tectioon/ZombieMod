@@ -2589,15 +2589,21 @@ CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> [vdata_s
 		return;
 	}
 
-	if (!V_strncmp(args[2], "weapon_knife", 12))
+	// The weapon already in the new one's slot is taken away first - a player holds one knife and one
+	// primary, and GiveNamedItem with the slot taken dropped the new gun on the floor in front of them
+	// (X9 Perlica bought while holding an AK-47, 2026-09-29).
+	const WeaponInfo_t* pInfo = FindWeaponInfoByClass(args[2]);
+	const bool bKnife = !V_strncmp(args[2], "weapon_knife", 12);
+	if (bKnife || (pInfo && (pInfo->m_eSlot == GEAR_SLOT_RIFLE || pInfo->m_eSlot == GEAR_SLOT_PISTOL)))
 	{
+		const gear_slot_t eSlot = bKnife ? GEAR_SLOT_KNIFE : pInfo->m_eSlot;
 		CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pPawn->m_pWeaponServices()->m_hMyWeapons();
 		FOR_EACH_VEC(*weapons, i)
 		{
 			CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
-			if (pWeapon && pWeapon->GetWeaponVData()->m_GearSlot() == GEAR_SLOT_KNIFE)
+			if (pWeapon && pWeapon->GetWeaponVData()->m_GearSlot() == eSlot)
 			{
-				// Drop first so the knife slot is free right now - Remove() alone only deletes at frame end
+				// Drop first so the slot is free right now - Remove() alone only deletes at frame end
 				pPawn->m_pWeaponServices()->DropWeapon(pWeapon);
 				pWeapon->Remove();
 				break;
@@ -2609,7 +2615,6 @@ CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> [vdata_s
 	// GiveNamedItem("weapon_knife_karambit") gives nothing - give a plain knife and switch its
 	// subclass instead (same as knife skin plugins do). Falls back to the plain knife on failure
 	// so the player is never left without one after their old knife was removed above.
-	const WeaponInfo_t* pInfo = FindWeaponInfoByClass(args[2]);
 	bool bKnifeSubclass = pInfo && pInfo->m_eSlot == GEAR_SLOT_KNIFE && V_strcmp(args[2], "weapon_knife");
 
 	CBasePlayerWeapon* pWeapon = pPawn->m_pItemServices()->GiveNamedItem(bKnifeSubclass ? "weapon_knife" : args[2]);
