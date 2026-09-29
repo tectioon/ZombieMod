@@ -2163,6 +2163,47 @@ CON_COMMAND_F(zm_remove_attached_visual, "<entity_index> - Remove the models zm_
 // testing, so C# draws it on every shot instead, the same way as the leader tracer (leader.cpp):
 // an info_particle_system on the weapon's "muzzle_flash" attachment with control point 1 at the
 // bullet's impact.
+// Owner-only and hidden-from-owner particles, kept in lists that ZM_FilterHeldParticleTransmit reads
+void ZM_AddOwnerOnlyParticle(CParticleSystem* pParticle, int iOwnerSlot);
+void ZM_AddHiddenFromOwnerParticle(CParticleSystem* pParticle, int iOwnerSlot);
+
+static CParticleSystem* SpawnWeaponTracer(const char* pszEffect, const Vector& vecImpact, float flLifetime, CBaseEntity* pParent,
+										  const Vector* pvecStart)
+{
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return nullptr;
+
+	if (pParent)
+	{
+		particle->AcceptInput("SetParent", "!activator", pParent, nullptr);
+		particle->AcceptInput("SetParentAttachment", "muzzle_flash");
+	}
+
+	// Face the shot, as the game's own tracers do: the attachment's own orientation on the world model
+	// isn't the shot direction, and the tracer's local-space offsets then drew it behind the shooter too
+	Vector vecFrom = pvecStart ? *pvecStart : pParent->GetAbsOrigin();
+	QAngle angShot;
+	VectorAngles(vecImpact - vecFrom, angShot);
+	particle->Teleport(pvecStart, &angShot, nullptr);
+
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	pKeyValues->SetString("effect_name", pszEffect);
+	pKeyValues->SetInt("data_cp", 1);
+	pKeyValues->SetVector("data_cp_value", vecImpact);
+	pKeyValues->SetBool("start_active", true);
+
+	particle->DispatchSpawn(pKeyValues);
+
+	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", flLifetime);
+	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", flLifetime + 0.02f);
+	return particle;
+}
+
+// The tracer draws a trail behind its head, and started from the world model's muzzle (at the owner's
+// chest) that trail reached behind the owner's camera - Cirno P90 shooters saw the beam in their back
+// (2026-09-29). So the owner gets a copy of their own that starts a little in front of the eyes, and
+// the muzzle copy everyone else sees is hidden from them.
 CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] - Draw a tracer from a weapon's muzzle to a point", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 6)
@@ -2179,31 +2220,27 @@ CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] 
 	if (!pWeapon || V_strncmp(pWeapon->GetClassname(), "weapon_", 7))
 		return;
 
-	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
-	if (!particle)
+	Vector vecImpact(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f));
+	float flLifetime = args.ArgC() >= 7 ? V_StringToFloat32(args[6], 0.5f) : 0.5f;
+
+	CCSPlayerPawn* pOwner = (CCSPlayerPawn*)pWeapon->m_hOwnerEntity().Get();
+	CCSPlayerController* pController = pOwner && pOwner->IsPawn() ? CCSPlayerController::FromPawn(pOwner) : nullptr;
+
+	CParticleSystem* pWorldCopy = SpawnWeaponTracer(args[5], vecImpact, flLifetime, pWeapon, nullptr);
+	if (!pController)
 		return;
 
-	particle->AcceptInput("SetParent", "!activator", pWeapon, nullptr);
-	particle->AcceptInput("SetParentAttachment", "muzzle_flash");
+	int iSlot = pController->GetPlayerSlot();
+	if (pWorldCopy)
+		ZM_AddHiddenFromOwnerParticle(pWorldCopy, iSlot);
 
-	// Face the shot, as the game's own tracers do: the attachment's own orientation on the world model
-	// isn't the shot direction, and the tracer's local-space offsets then drew it behind the shooter too
-	Vector vecImpact(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f));
-	QAngle angShot;
-	VectorAngles(vecImpact - pWeapon->GetAbsOrigin(), angShot);
-	particle->Teleport(nullptr, &angShot, nullptr);
+	Vector vecForward, vecRight, vecUp;
+	AngleVectors(pOwner->m_angEyeAngles(), &vecForward, &vecRight, &vecUp);
+	Vector vecStart = pOwner->GetEyePosition() + vecForward * 40.0f + vecRight * 5.0f - vecUp * 6.0f;
 
-	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
-	pKeyValues->SetString("effect_name", args[5]);
-	pKeyValues->SetInt("data_cp", 1);
-	pKeyValues->SetVector("data_cp_value", vecImpact);
-	pKeyValues->SetBool("start_active", true);
-
-	particle->DispatchSpawn(pKeyValues);
-
-	float flLifetime = args.ArgC() >= 7 ? V_StringToFloat32(args[6], 0.5f) : 0.5f;
-	UTIL_AddEntityIOEvent(particle, "DestroyImmediately", nullptr, nullptr, "", flLifetime);
-	UTIL_AddEntityIOEvent(particle, "Kill", nullptr, nullptr, "", flLifetime + 0.02f);
+	CParticleSystem* pOwnerCopy = SpawnWeaponTracer(args[5], vecImpact, flLifetime, nullptr, &vecStart);
+	if (pOwnerCopy)
+		ZM_AddOwnerOnlyParticle(pOwnerCopy, iSlot);
 }
 
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
@@ -2258,6 +2295,21 @@ std::weak_ptr<CTimer> g_pHeldParticleOwnerTimer;
 // the sword flame's cleanup (RemoveOwnerHeldParticles) never touches them
 std::vector<HeldParticle_t> g_vecOwnerOnlyParticles;
 
+// World particles everyone sees except one player (the muzzle copy of zm_weapon_tracer)
+std::vector<HeldParticle_t> g_vecHiddenFromOwnerParticles;
+
+void ZM_AddOwnerOnlyParticle(CParticleSystem* pParticle, int iOwnerSlot)
+{
+	std::erase_if(g_vecOwnerOnlyParticles, [](const HeldParticle_t& owned) { return !owned.hParticle.Get(); });
+	g_vecOwnerOnlyParticles.push_back({pParticle->GetHandle(), iOwnerSlot, true});
+}
+
+void ZM_AddHiddenFromOwnerParticle(CParticleSystem* pParticle, int iOwnerSlot)
+{
+	std::erase_if(g_vecHiddenFromOwnerParticles, [](const HeldParticle_t& owned) { return !owned.hParticle.Get(); });
+	g_vecHiddenFromOwnerParticles.push_back({pParticle->GetHandle(), iOwnerSlot, false});
+}
+
 void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransmitEntity)
 {
 	for (const auto& held : g_vecHeldParticles)
@@ -2271,6 +2323,13 @@ void ZM_FilterHeldParticleTransmit(int iPlayerSlot, CBitVec<MAX_EDICTS>* pTransm
 	{
 		CParticleSystem* pParticle = owned.hParticle.Get();
 		if (pParticle && owned.iOwnerSlot != iPlayerSlot)
+			pTransmitEntity->Clear(pParticle->entindex());
+	}
+
+	for (const auto& hidden : g_vecHiddenFromOwnerParticles)
+	{
+		CParticleSystem* pParticle = hidden.hParticle.Get();
+		if (pParticle && hidden.iOwnerSlot == iPlayerSlot)
 			pTransmitEntity->Clear(pParticle->entindex());
 	}
 }
