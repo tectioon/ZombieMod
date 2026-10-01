@@ -2232,6 +2232,81 @@ CON_COMMAND_F(zm_weapon_tracer, "<weapon_index> <x> <y> <z> <effect> [lifetime] 
 	SpawnWeaponTracer(args[5], vecImpact, flLifetime, nullptr, &vecStart);
 }
 
+// For EconomyShopPlugin's Laser Commander Pistol: one ball per shot that flies from the gun to where the
+// shot ends. A single info_particle_system is moved every frame (the effect's C_OP_PositionLock keeps the
+// ball on it, and clients interpolate the movement), then destroyed on arrival. The earlier way - a new
+// short-lived particle spawned at each step from C# - never showed in game (2026-09-30): each copy was
+// removed again within a tick.
+CON_COMMAND_F(zm_projectile_particle, "<effect> <start x y z> <end x y z> <speed> [impact_effect] [impact_duration] - Fly a particle from start to end", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 9)
+	{
+		ConMsg("zm_projectile_particle: usage: zm_projectile_particle <effect> <start x y z> <end x y z> <speed> [impact_effect] [impact_duration]\n");
+		return;
+	}
+
+	Vector vecStart(V_StringToFloat32(args[2], 0.0f), V_StringToFloat32(args[3], 0.0f), V_StringToFloat32(args[4], 0.0f));
+	Vector vecEnd(V_StringToFloat32(args[5], 0.0f), V_StringToFloat32(args[6], 0.0f), V_StringToFloat32(args[7], 0.0f));
+	float flSpeed = V_StringToFloat32(args[8], 0.0f);
+	Vector vecDir = vecEnd - vecStart;
+	float flDistance = VectorNormalize(vecDir);
+	if (flSpeed <= 0.0f || flDistance < 1.0f)
+		return;
+
+	CParticleSystem* particle = CreateEntityByName<CParticleSystem>("info_particle_system");
+	if (!particle)
+		return;
+
+	QAngle angDir;
+	VectorAngles(vecDir, angDir);
+	particle->Teleport(&vecStart, &angDir, nullptr);
+
+	CEntityKeyValues* pKeyValues = new CEntityKeyValues();
+	pKeyValues->SetString("effect_name", args[1]);
+	pKeyValues->SetBool("start_active", true);
+	particle->DispatchSpawn(pKeyValues);
+
+	CHandle<CParticleSystem> hParticle = particle->GetHandle();
+	float flStartTime = GetGlobals()->curtime;
+	std::string strImpact = args.ArgC() >= 10 ? args[9] : "";
+	float flImpactDuration = args.ArgC() >= 11 ? V_StringToFloat32(args[10], 1.0f) : 1.0f;
+
+	// Not TIMERFLAG_ROUND: the timer has to outlive a round restart to remove a ball still in flight
+	CTimer::Create(0.0f, TIMERFLAG_MAP, [hParticle, vecStart, vecEnd, vecDir, flDistance, flSpeed, flStartTime, strImpact, flImpactDuration]() {
+		CParticleSystem* pParticle = hParticle.Get();
+		if (!pParticle)
+			return -1.0f;
+
+		float flTravelled = (GetGlobals()->curtime - flStartTime) * flSpeed;
+		if (flTravelled < flDistance)
+		{
+			Vector vecPos = vecStart + vecDir * flTravelled;
+			pParticle->Teleport(&vecPos, nullptr, nullptr);
+			return 0.0f;
+		}
+
+		// Gone the moment it arrives, not left to fade out at the impact
+		pParticle->AcceptInput("DestroyImmediately");
+		UTIL_AddEntityIOEvent(pParticle, "Kill", nullptr, nullptr, "", 0.02f);
+
+		if (!strImpact.empty())
+		{
+			CParticleSystem* pImpact = CreateEntityByName<CParticleSystem>("info_particle_system");
+			if (pImpact)
+			{
+				pImpact->Teleport(&vecEnd, nullptr, nullptr);
+				CEntityKeyValues* pImpactKeyValues = new CEntityKeyValues();
+				pImpactKeyValues->SetString("effect_name", strImpact.c_str());
+				pImpactKeyValues->SetBool("start_active", true);
+				pImpact->DispatchSpawn(pImpactKeyValues);
+				UTIL_AddEntityIOEvent(pImpact, "Kill", nullptr, nullptr, "", flImpactDuration);
+			}
+		}
+
+		return -1.0f;
+	});
+}
+
 // For EconomyShopPlugin's custom weapons that carry their own effect while held (Dark Souls
 // sword's blade flame), re-sent by C# about every second since the effect stops itself.
 // A short-lived info_particle_system parented to the weapon's attachment, the same way the leader
