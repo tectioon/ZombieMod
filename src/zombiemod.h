@@ -36,7 +36,7 @@ extern CConVar<bool> g_cvarZMInfiniteAmmo;
 extern CConVar<int> g_cvarZMInfiniteAmmoTotal;
 extern CConVar<bool> g_cvarZMUserPresToFile;
 
-#define ZM_PREFIX " \4[ZombieMod]\1 "
+#define ZM_PREFIX " \4[DEZPINZM]\1 "
 
 enum class EZMRoundState
 {
