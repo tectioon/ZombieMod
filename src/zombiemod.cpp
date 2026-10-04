@@ -910,6 +910,10 @@ bool ZM_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPa
 	}
 }
 
+// Set by zm_give_custom_weapon while it gives an item, so a zombie can be handed one (the headcrab grenade from
+// EconomyShopPlugin's zombie shop) even though zombies may otherwise only carry knives
+static bool g_bZMGivingCustomWeapon = false;
+
 // can prevent purchasing and picking it up
 AcquireResult ZM_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices* pItemServices, CEconItemView* pEconItem)
 {
@@ -923,7 +927,7 @@ AcquireResult ZM_Detour_CCSPlayer_ItemServices_CanAcquire(CCSPlayer_ItemServices
 	if (!pWeaponInfo)
 		return AcquireResult::Allowed;
 
-	if (pPawn->m_iTeamNum() == CS_TEAM_T && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && V_strncmp(pWeaponInfo->m_pClass, "weapon_c4", 9))
+	if (pPawn->m_iTeamNum() == CS_TEAM_T && !g_bZMGivingCustomWeapon && !CCSPlayer_ItemServices::IsAwsProcessing() && V_strncmp(pWeaponInfo->m_pClass, "weapon_knife", 12) && V_strncmp(pWeaponInfo->m_pClass, "weapon_c4", 9))
 		return AcquireResult::NotAllowedByTeam;
 	if (pPawn->m_iTeamNum() == CS_TEAM_CT && !g_pZRWeaponConfig->FindWeapon(pWeaponInfo->m_pClass))
 		return AcquireResult::NotAllowedByProhibition;
@@ -2740,7 +2744,9 @@ CON_COMMAND_F(zm_give_custom_weapon, "<userid> <classname> <model_path> [vdata_s
 	// so the player is never left without one after their old knife was removed above.
 	bool bKnifeSubclass = pInfo && pInfo->m_eSlot == GEAR_SLOT_KNIFE && V_strcmp(args[2], "weapon_knife");
 
+	g_bZMGivingCustomWeapon = true;
 	CBasePlayerWeapon* pWeapon = pPawn->m_pItemServices()->GiveNamedItem(bKnifeSubclass ? "weapon_knife" : args[2]);
+	g_bZMGivingCustomWeapon = false;
 	if (!pWeapon)
 		return;
 
