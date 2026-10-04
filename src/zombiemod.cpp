@@ -1944,6 +1944,28 @@ CON_COMMAND_F(zm_mine_kill, "<victim_userid> <owner_userid> - Kill a player, att
 		pInferno->Remove();
 }
 
+// For EconomyShopPlugin's headcrab grenade: the headcrab that reaches a human infects them, credited to the zombie
+// who threw it (themselves when that zombie is gone or no longer a zombie), the same way a knife infection is.
+CON_COMMAND_F(zm_infect_player, "<victim_userid> [attacker_userid] - Infect a human, crediting a zombie", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("zm_infect_player: usage: zm_infect_player <victim_userid> [attacker_userid]\n");
+		return;
+	}
+
+	CCSPlayerController* pVictim = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	CCSPlayerPawn* pVictimPawn = pVictim ? pVictim->GetPlayerPawn() : nullptr;
+	if (!pVictimPawn || !pVictimPawn->IsAlive() || pVictim->m_iTeamNum() != CS_TEAM_CT)
+		return;
+
+	CCSPlayerController* pAttacker = args.ArgC() >= 3 ? CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[2], 0)).Get()) : nullptr;
+	if (!pAttacker || pAttacker->m_iTeamNum() != CS_TEAM_T || !pAttacker->GetZEPlayer())
+		pAttacker = pVictim;
+
+	ZM_Infect(pAttacker, pVictim, false);
+}
+
 // Same attacker-attribution pattern as zm_mine_kill above, but for a specific (non-lethal) damage
 // amount - used by EconomyShopPlugin's zombie class abilities (e.g. Spitter's acid spit) so hits
 // go through the real CTakeDamageInfo/TakeDamage path (kill feed, on-kill rewards if it finishes
