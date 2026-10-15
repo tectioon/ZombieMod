@@ -1036,9 +1036,13 @@ bool FASTCALL Detour_IsCommandWhitelisted(void* pAddonManager, const char* pszCo
 // every other signature in the same gamedata refresh does, for reasons not yet understood. Making
 // this one non-fatal keeps the server running rather than fully refusing to load CS2Fixes over one
 // optional diagnostic hook.
+// IsCommandWhitelisted: since the 2026-10-15 CS2 build it's inlined into its only caller on Linux
+// (the "DISALLOWED WORKSHOP CONVAR" function now does the CUtlSymbolTable lookup itself), so there's
+// nothing left to detour. It only backs cs2f_cvarwhitelist_enable, which is off on this server.
 static bool IsOptionalDetour(const char* pszName)
 {
-	return V_stricmp(pszName, "CCSPlayer_WeaponServices_CanUse") == 0;
+	return V_stricmp(pszName, "CCSPlayer_WeaponServices_CanUse") == 0
+		|| V_stricmp(pszName, "IsCommandWhitelisted") == 0;
 }
 
 bool InitDetours(CGameConfig* gameConfig)
