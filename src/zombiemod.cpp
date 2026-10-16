@@ -1970,6 +1970,22 @@ CON_COMMAND_F(zm_infect_player, "<victim_userid> [attacker_userid] - Infect a hu
 	ZM_Infect(pAttacker, pVictim, false);
 }
 
+// For EconomyShopPlugin's Antidote: a zombie turns back into a human, the same as the zmrevive admin command
+// (ZM_Cure + ZM_StripAndGiveKnife) but without its admin line in chat.
+CON_COMMAND_F(zm_cure_player, "<userid> - Turn a zombie back into a human, silently", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2 || g_ZMRoundState != EZMRoundState::POST_INFECTION)
+		return;
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	CCSPlayerPawn* pPawn = pTarget ? pTarget->GetPlayerPawn() : nullptr;
+	if (!pPawn || !pPawn->IsAlive() || pTarget->m_iTeamNum() != CS_TEAM_T)
+		return;
+
+	ZM_Cure(pTarget);
+	ZM_StripAndGiveKnife(pPawn);
+}
+
 // Same attacker-attribution pattern as zm_mine_kill above, but for a specific (non-lethal) damage
 // amount - used by EconomyShopPlugin's zombie class abilities (e.g. Spitter's acid spit) so hits
 // go through the real CTakeDamageInfo/TakeDamage path (kill feed, on-kill rewards if it finishes
