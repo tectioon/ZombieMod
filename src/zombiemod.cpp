@@ -1986,6 +1986,34 @@ CON_COMMAND_F(zm_cure_player, "<userid> - Turn a zombie back into a human, silen
 	ZM_StripAndGiveKnife(pPawn);
 }
 
+// EconomyShopPlugin's own HUD hides CS2's weapon selection (m_iHideHUD), which makes the client ignore slot1..., so
+// the plugin switches weapons itself on the players' css_N binds
+CON_COMMAND_F(zm_select_weapon, "<userid> <weapon entindex> - Switch a player to one of their own weapons", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 3)
+		return;
+
+	CCSPlayerController* pTarget = CCSPlayerController::FromSlot(g_playerManager->GetSlotFromUserId(V_StringToUint16(args[1], 0)).Get());
+	CCSPlayerPawn* pPawn = pTarget ? pTarget->GetPlayerPawn() : nullptr;
+	CCSPlayer_WeaponServices* pWeaponServices = pPawn ? pPawn->m_pWeaponServices() : nullptr;
+	if (!pWeaponServices || !pPawn->IsAlive())
+		return;
+
+	int iEntIndex = V_StringToInt32(args[2], -1);
+	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pWeaponServices->m_hMyWeapons();
+
+	FOR_EACH_VEC(*weapons, i)
+	{
+		CBasePlayerWeapon* pWeapon = (*weapons)[i].Get();
+
+		if (pWeapon && pWeapon->entindex() == iEntIndex)
+		{
+			pWeaponServices->SelectItem(pWeapon);
+			return;
+		}
+	}
+}
+
 // Same attacker-attribution pattern as zm_mine_kill above, but for a specific (non-lethal) damage
 // amount - used by EconomyShopPlugin's zombie class abilities (e.g. Spitter's acid spit) so hits
 // go through the real CTakeDamageInfo/TakeDamage path (kill feed, on-kill rewards if it finishes
