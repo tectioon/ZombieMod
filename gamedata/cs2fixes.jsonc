@@ -174,6 +174,14 @@
 			"windows": "48 89 5C 24 ? 57 48 83 EC ? 48 83 79 ? ? 48 8B FA 48 8B D9 75 ? E8 ? ? ? ? 48 8B 53",
 			"linux": "55 48 89 E5 41 55 41 54 49 89 FC 53 48 89 F3 48 83 EC ? 48 8B 77"
 		},
+		// Menu keys 1-9 without binds (slotinput.cpp), from Source2Mod's gamedata; optional: if it is not found,
+		// menus just keep needing binds
+		"CBaseEntity::UpdateSubclassVData":
+		{
+			"library": "server",
+			"windows": "4C 8B DC 53 48 81 EC ? ? ? ? 48 8B 41",
+			"linux": "55 48 89 E5 41 57 49 89 FF 41 56 41 55 41 54 53 48 81 EC ? ? ? ? 48 8B 07 FF 90 ? ? ? ? 89 C3"
+		},
 		"CreateEntityByName":
 		{
 			"library": "server",

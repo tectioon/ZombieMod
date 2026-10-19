@@ -64,6 +64,7 @@
 #include "votemanager.h"
 #include "zombiereborn.h"
 #include "zombiemod.h"
+#include "slotinput.h"
 #include <entity.h>
 
 #include "tier0/memdbgon.h"
@@ -185,6 +186,7 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 	int offset = g_GameConfig->GetOffset("IGameTypes_CreateWorkshopMapGroup");
 	SH_MANUALHOOK_RECONFIGURE(CreateWorkshopMapGroup, offset, 0, 0);
 
+	SH_ADD_HOOK(IServerGameDLL, GameFrame, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameFramePre), false);
 	SH_ADD_HOOK(IServerGameDLL, GameFrame, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameFramePost), true);
 	SH_ADD_HOOK(IServerGameDLL, GameServerSteamAPIActivated, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameServerSteamAPIActivated), false);
 	SH_ADD_HOOK(IServerGameDLL, ApplyGameSettings, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_ApplyGameSettings), false);
@@ -418,6 +420,8 @@ bool CS2Fixes::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
 
 bool CS2Fixes::Unload(char* error, size_t maxlen)
 {
+	slotinput::Shutdown();
+	SH_REMOVE_HOOK(IServerGameDLL, GameFrame, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameFramePre), false);
 	SH_REMOVE_HOOK(IServerGameDLL, GameFrame, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameFramePost), true);
 	SH_REMOVE_HOOK(IServerGameDLL, GameServerSteamAPIActivated, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_GameServerSteamAPIActivated), false);
 	SH_REMOVE_HOOK(IServerGameDLL, ApplyGameSettings, g_pSource2Server, SH_MEMBER(this, &CS2Fixes::Hook_ApplyGameSettings), false);
@@ -528,6 +532,9 @@ bool CS2Fixes::Unload(char* error, size_t maxlen)
 void CS2Fixes::Hook_DispatchConCommand(ConCommandRef cmdHandle, const CCommandContext& ctx, const CCommand& args)
 {
 	VPROF_BUDGET("CS2Fixes::Hook_DispatchConCommand", "ConCommands");
+
+	// Menu-key fakes are only in m_hMyWeapons while a snapshot is packed; no command may see them
+	slotinput::Eject();
 
 	if (!g_pEntitySystem)
 		RETURN_META(MRES_IGNORED);
@@ -854,6 +861,8 @@ void CS2Fixes::Hook_ClientActive(CPlayerSlot slot, bool bLoadGame, const char* p
 
 void CS2Fixes::Hook_ClientCommand(CPlayerSlot slot, const CCommand& args)
 {
+	slotinput::Eject();
+
 #ifdef _DEBUG
 	Message("Hook_ClientCommand(%d, \"%s\")\n", slot, args.GetCommandString());
 #endif
@@ -942,6 +951,8 @@ void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReas
 {
 	Message("Hook_ClientDisconnect(%d, %d, \"%s\", %lli)\n", slot, reason, pszName, xuid);
 
+	slotinput::ResetPlayer(slot);
+
 	CCSPlayerController* player = CCSPlayerController::FromSlot(slot);
 
 	if (g_cvarEnableZR.Get())
@@ -969,6 +980,12 @@ void CS2Fixes::Hook_ClientDisconnect(CPlayerSlot slot, ENetworkDisconnectionReas
 	g_playerManager->OnClientDisconnect(slot);
 }
 
+// Before the game's frame: the menu-key fakes leave m_hMyWeapons, so no game code ever sees them (slotinput.cpp)
+void CS2Fixes::Hook_GameFramePre(bool simulating, bool bFirstTick, bool bLastTick)
+{
+	slotinput::Eject();
+}
+
 void CS2Fixes::Hook_GameFramePost(bool simulating, bool bFirstTick, bool bLastTick)
 {
 	/**
@@ -982,6 +999,8 @@ void CS2Fixes::Hook_GameFramePost(bool simulating, bool bFirstTick, bool bLastTi
 
 	if (!GetGlobals())
 		return;
+
+	slotinput::OnFrame();
 
 	if (simulating && g_bHasTicked)
 		g_flUniversalTime += GetGlobals()->curtime - g_flLastTickedTime;
@@ -1006,6 +1025,11 @@ void CS2Fixes::Hook_CheckTransmit(CCheckTransmitInfo** ppInfoList, int infoCount
 		return;
 
 	VPROF("CS2Fixes::Hook_CheckTransmit");
+
+	// The menu-key fakes go into m_hMyWeapons for this pack only, and stay off every wire but their owner's
+	slotinput::Inject();
+	for (int i = 0; i < infoCount; i++)
+		slotinput::BlockForViewer((CCheckTransmitInfoExtended*)ppInfoList[i]);
 
 	for (int i = 0; i < infoCount; i++)
 	{

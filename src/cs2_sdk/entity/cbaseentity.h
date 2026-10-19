@@ -152,6 +152,7 @@ public:
 	SCHEMA_FIELD(CUtlSymbolLarge, m_target);
 	SCHEMA_FIELD(CUtlSymbolLarge, m_iGlobalname);
 	SCHEMA_FIELD(CHandle<CBaseEntity>, m_hOwnerEntity)
+	SCHEMA_FIELD(uint32, m_fEffects)
 
 	int entindex() { return m_pEntity->m_EHandle.GetEntryIndex(); }
 

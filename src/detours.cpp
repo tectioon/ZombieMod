@@ -52,6 +52,7 @@
 #include "module.h"
 #include "networksystem/inetworkserializer.h"
 #include "playermanager.h"
+#include "slotinput.h"
 #include "serversideclient.h"
 #include "tier0/vprof.h"
 #include "votemanager.h"
@@ -599,7 +600,7 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 
 CConVar<bool> g_cvarDisableSubtickMovement("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);
 CConVar<bool> g_cvarDisableSubtickShooting("cs2f_disable_subtick_shooting", FCVAR_NONE, "Whether to disable subtick shooting, experimental (WARNING: add \"log_flags Shooting + DoNotEcho\" to your cfg to prevent console spam on every shot fired)", false);
-CConVar<bool> g_cvarLogWeaponSelect("zm_log_weaponselect", FCVAR_NONE, "Log every weapon selection a client sends in its usercmds (EconomyShopPlugin HUD test)", true);
+CConVar<bool> g_cvarLogWeaponSelect("zm_log_weaponselect", FCVAR_NONE, "Log every weapon selection a client sends in its usercmds (EconomyShopPlugin HUD test)", false);
 
 // EconomyShopPlugin's Rocket Launcher repurposes a real weapon_aug entity so it behaves like a
 // normal held/dropped/picked-up weapon, but needs its NATIVE fire to be completely inert - only
@@ -638,6 +639,9 @@ public:
 void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd* cmds, int numcmds, bool paused, float margin)
 {
 	VPROF_SCOPE_BEGIN("Detour_ProcessUsercmds");
+
+	// Menu-key fakes are only in m_hMyWeapons while a snapshot is packed (slotinput.cpp)
+	slotinput::Eject();
 
 	for (int i = 0; i < numcmds; i++)
 	{
@@ -711,6 +715,10 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 		for (int i = 0; i < numcmds; i++)
 		{
 			if (!cmds[i].cmd.has_base() || cmds[i].cmd.base().weaponselect() == 0)
+				continue;
+
+			// A menu key through its fake weapon (slotinput.cpp): no switch
+			if (slotinput::OnWeaponSelect(pController, cmds[i].cmd))
 				continue;
 
 			int iEntIndex = cmds[i].cmd.base().weaponselect();
