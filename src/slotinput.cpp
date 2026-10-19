@@ -24,7 +24,9 @@
 
 #include "tier0/memdbgon.h"
 
-CConVar<bool> g_cvarMenuSlotKeys("zm_menu_slotkeys", FCVAR_NONE, "Menu keys 1-9 without binds (fake weapons, see slotinput.cpp)", true);
+// Off since 2026-10-19 (user): CS2's weapon list blinked, the wheel pressed menu rows, the dormant fakes crashed the game;
+// menus are back on the players' css_N binds
+CConVar<bool> g_cvarMenuSlotKeys("zm_menu_slotkeys", FCVAR_NONE, "Menu keys 1-9 without binds (fake weapons, see slotinput.cpp)", false);
 CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends, so CS2's weapon list and the wheel skip them (crashed the owner's game twice on 2026-10-19)", false);
 
 namespace slotinput
