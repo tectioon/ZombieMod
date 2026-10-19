@@ -25,6 +25,7 @@
 #include "tier0/memdbgon.h"
 
 CConVar<bool> g_cvarMenuSlotKeys("zm_menu_slotkeys", FCVAR_NONE, "Menu keys 1-9 without binds (fake weapons, see slotinput.cpp)", true);
+CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends (Source2Mod's way; crashed a client once)", false);
 
 namespace slotinput
 {
@@ -491,9 +492,12 @@ namespace slotinput
 		g_bAnyInjected = false;
 	}
 
-	// Nobody else ever gets a player's fakes. The owner gets each one a few times and then no more: the client keeps
-	// it dormant. The loadout HUD skips dormant weapons, while the slot selection still finds the dormant fake and
-	// sends the key. The owner gets them again on a full update, and during the handover.
+	// Nobody else ever gets a player's fakes. Source2Mod also keeps them dormant on the owner's client after a few
+	// sends (transmit bit off + the "keep a record" bit on), so CS2's weapon list skips them. Here that crashed the
+	// owner's game on 2026-10-19 ("FATAL ERROR: OnPreserveEntity: missing client entity 149", after buying from the
+	// shop): the record bit had been set for a fake the client didn't have. So the record bit is only ever set for a
+	// fake the owner was really sent kSendsBeforeDormant times, and only with zm_menu_slotkeys_dormant 1 (off by
+	// default: the owner simply always gets them). Other viewers never had a fake, so it's just kept off their wire.
 	void BlockForViewer(CCheckTransmitInfoExtended* pInfo)
 	{
 		if (!pInfo || !pInfo->m_pTransmitEntity || !pInfo->m_pTransmitNonPlayers)
@@ -513,15 +517,25 @@ namespace slotinput
 				if (!pWeapon)
 					continue;
 
-				if (own)
+				const int index = pWeapon->entindex();
+
+				if (!own)
 				{
-					if (pInfo->m_bFullUpdate || s.Handover > 0)
-						fake.Sent = 0;
-					if (s.Handover > 0 || fake.Sent++ < kSendsBeforeDormant)
-						continue;
+					pInfo->m_pTransmitEntity->Clear(index);
+					continue;
 				}
 
-				const int index = pWeapon->entindex();
+				if (pInfo->m_bFullUpdate || s.Handover > 0)
+					fake.Sent = 0;
+
+				if (!g_cvarMenuSlotKeysDormant.Get() || s.Handover > 0 || fake.Sent < kSendsBeforeDormant)
+				{
+					// Counted only when the engine really sends it this snapshot
+					if (pInfo->m_pTransmitEntity->IsBitSet(index))
+						fake.Sent++;
+					continue;
+				}
+
 				pInfo->m_pTransmitEntity->Clear(index);
 				pInfo->m_pTransmitNonPlayers->Set(index);
 			}
