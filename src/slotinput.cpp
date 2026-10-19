@@ -25,7 +25,7 @@
 #include "tier0/memdbgon.h"
 
 CConVar<bool> g_cvarMenuSlotKeys("zm_menu_slotkeys", FCVAR_NONE, "Menu keys 1-9 without binds (fake weapons, see slotinput.cpp)", true);
-CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends (Source2Mod's way; crashed a client once)", false);
+CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends, so CS2's weapon list and the wheel skip them", true);
 
 namespace slotinput
 {
@@ -322,29 +322,8 @@ namespace slotinput
 			}
 		}
 
-		// A real weapon in a slot whose key the menu uses is not switched to either: the key arrives through the
-		// fake, or through css_N. The wheel and lastinv land here too.
-		CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
-		CCSPlayer_WeaponServices* pWeaponServices = pPawn ? pPawn->m_pWeaponServices() : nullptr;
-		if (!pWeaponServices)
-			return false;
-
-		CUtlVector<CHandle<CBasePlayerWeapon>>* pMyWeapons = pWeaponServices->m_hMyWeapons();
-		FOR_EACH_VEC(*pMyWeapons, i)
-		{
-			CBasePlayerWeapon* pWeapon = (*pMyWeapons)[i].Get();
-			if (!pWeapon || pWeapon->entindex() != index)
-				continue;
-
-			int gearSlot = pWeapon->GetWeaponVData() ? (int)pWeapon->GetWeaponVData()->m_GearSlot() : -1;
-			if (gearSlot >= 0 && gearSlot <= 4 && (s.MenuKeys & (1u << (gearSlot + 1))))
-			{
-				cmd.mutable_base()->clear_weaponselect();
-				return true;
-			}
-			break;
-		}
-
+		// A real weapon (Q, the wheel) always switches, menu open or not: Source2Mod blocked the slots of the menu's keys
+		// for players who bind "slotN;N", but nobody here binds menu keys, so that only broke Q (2026-10-19).
 		return false;
 	}
 
