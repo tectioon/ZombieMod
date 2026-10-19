@@ -599,6 +599,7 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 
 CConVar<bool> g_cvarDisableSubtickMovement("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);
 CConVar<bool> g_cvarDisableSubtickShooting("cs2f_disable_subtick_shooting", FCVAR_NONE, "Whether to disable subtick shooting, experimental (WARNING: add \"log_flags Shooting + DoNotEcho\" to your cfg to prevent console spam on every shot fired)", false);
+CConVar<bool> g_cvarLogWeaponSelect("zm_log_weaponselect", FCVAR_NONE, "Log every weapon selection a client sends in its usercmds (EconomyShopPlugin HUD test)", true);
 
 // EconomyShopPlugin's Rocket Launcher repurposes a real weapon_aug entity so it behaves like a
 // normal held/dropped/picked-up weapon, but needs its NATIVE fire to be completely inert - only
@@ -698,6 +699,38 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 					iterator = subtickMoves->erase(iterator);
 				else
 					iterator++;
+			}
+		}
+	}
+
+	// EconomyShopPlugin's own HUD hides CS2's weapon selection (m_iHideHUD & HIDEHUD_WEAPONSELECTION), and then 1-4 / Q
+	// stop switching weapons. Test whether the client still sends the selection: log it, and while the HUD is hidden
+	// select the weapon here ourselves.
+	if (CCSPlayerPawn* pSelPawn = pController->GetPlayerPawn(); pSelPawn && pSelPawn->m_pWeaponServices())
+	{
+		for (int i = 0; i < numcmds; i++)
+		{
+			if (!cmds[i].cmd.has_base() || cmds[i].cmd.base().weaponselect() == 0)
+				continue;
+
+			int iEntIndex = cmds[i].cmd.base().weaponselect();
+			uint32 iHideHud = pSelPawn->m_iHideHUD();
+			if (g_cvarLogWeaponSelect.Get())
+				Message("[WeaponSelect] %s sent weaponselect %d (m_iHideHUD %u)
+", pController->GetPlayerName().c_str(), iEntIndex, iHideHud);
+
+			if (!(iHideHud & (1u << 0))) // HIDEHUD_WEAPONSELECTION
+				continue;
+
+			CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pSelPawn->m_pWeaponServices()->m_hMyWeapons();
+			FOR_EACH_VEC(*weapons, w)
+			{
+				CBasePlayerWeapon* pWeapon = (*weapons)[w].Get();
+				if (pWeapon && pWeapon->entindex() == iEntIndex)
+				{
+					pSelPawn->m_pWeaponServices()->SelectItem(pWeapon);
+					break;
+				}
 			}
 		}
 	}

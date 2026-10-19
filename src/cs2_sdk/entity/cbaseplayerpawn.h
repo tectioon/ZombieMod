@@ -36,6 +36,7 @@ public:
 	SCHEMA_FIELD(CPlayer_CameraServices*, m_pCameraServices)
 	SCHEMA_FIELD(CHandle<CBasePlayerController>, m_hController)
 	SCHEMA_FIELD(QAngle, v_angle)
+	SCHEMA_FIELD(uint32, m_iHideHUD)
 
 	// Drops any map-spawned weapons the pawn is holding
 	// NOTE: This doesn't predict correctly to the weapon holder! Looks very funky when testing, but not really an issue on live servers
