@@ -716,8 +716,7 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 			int iEntIndex = cmds[i].cmd.base().weaponselect();
 			uint32 iHideHud = pSelPawn->m_iHideHUD();
 			if (g_cvarLogWeaponSelect.Get())
-				Message("[WeaponSelect] %s sent weaponselect %d (m_iHideHUD %u)
-", pController->GetPlayerName().c_str(), iEntIndex, iHideHud);
+				Message("[WeaponSelect] %s sent weaponselect %d (m_iHideHUD %u)\n", pController->GetPlayerName().c_str(), iEntIndex, iHideHud);
 
 			if (!(iHideHud & (1u << 0))) // HIDEHUD_WEAPONSELECTION
 				continue;
