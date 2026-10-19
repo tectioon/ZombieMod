@@ -81,7 +81,8 @@ namespace slotinput
 		};
 
 		Session g_Sessions[MAXPLAYERS];
-		uint32 g_MenuKeys[MAXPLAYERS]; // set by the plugin with zm_menu_keys
+		constexpr int kMenuSources = 4;		// one per plugin with menus (EconomyShopPlugin 0, MapVotePlugin 1)
+		uint32 g_MenuKeys[MAXPLAYERS][kMenuSources]; // set by the plugins with zm_menu_keys
 		bool g_bAnyInjected = false;
 
 		// NetworkStateChanged for the whole of m_hMyWeapons: its size AND every element. The plain field NSC only
@@ -271,7 +272,10 @@ namespace slotinput
 			if (!pPawn || !pPawn->m_pWeaponServices() || !GetUpdateSubclassVData())
 				return 0;
 
-			return g_MenuKeys[slot];
+			uint32 mask = 0;
+			for (int source = 0; source < kMenuSources; source++)
+				mask |= g_MenuKeys[slot][source];
+			return mask;
 		}
 
 		void DeliverKey(int slot, int key)
@@ -349,10 +353,10 @@ namespace slotinput
 			Stop(slot);
 	}
 
-	void SetMenuKeys(int slot, uint32 mask)
+	void SetMenuKeys(int slot, int source, uint32 mask)
 	{
-		if (slot >= 0 && slot < MAXPLAYERS)
-			g_MenuKeys[slot] = mask;
+		if (slot >= 0 && slot < MAXPLAYERS && source >= 0 && source < kMenuSources)
+			g_MenuKeys[slot][source] = mask;
 	}
 
 	void ResetPlayer(CPlayerSlot slot)
@@ -361,7 +365,8 @@ namespace slotinput
 		if (s < 0 || s >= MAXPLAYERS)
 			return;
 
-		g_MenuKeys[s] = 0;
+		for (uint32& mask : g_MenuKeys[s])
+			mask = 0;
 	}
 
 	void OnFrame()
@@ -515,8 +520,9 @@ namespace slotinput
 	}
 } // namespace slotinput
 
-// EconomyShopPlugin: the keys (bit = key 1..9) the player's open menu page takes; 0 = no menu
-CON_COMMAND_F(zm_menu_keys, "<slot> <key mask> - Menu keys 1-9 without binds for the open menu page", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+// EconomyShopPlugin (source 0) / MapVotePlugin (1): the keys (bit = key 1..9) the player's open menu page takes; 0 = no
+// menu. es_menu_key goes to both plugins; each acts only on its own open menu.
+CON_COMMAND_F(zm_menu_keys, "<slot> <key mask> [source 0-3] - Menu keys 1-9 without binds for the open menu page", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 3)
 		return;
@@ -525,5 +531,6 @@ CON_COMMAND_F(zm_menu_keys, "<slot> <key mask> - Menu keys 1-9 without binds for
 	if (slot < 0 || slot >= MAXPLAYERS)
 		return;
 
-	slotinput::SetMenuKeys(slot, (uint32)V_StringToInt32(args[2], 0) & 0x3FE);
+	int source = args.ArgC() > 3 ? V_StringToInt32(args[3], 0) : 0;
+	slotinput::SetMenuKeys(slot, source, (uint32)V_StringToInt32(args[2], 0) & 0x3FE);
 }

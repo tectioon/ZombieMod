@@ -35,7 +35,7 @@ namespace slotinput
 	// A usercmd's weaponselect; true when it was a menu key (the switch is dropped)
 	bool OnWeaponSelect(CCSPlayerController* pController, CSGOUserCmdPB& cmd);
 
-	// zm_menu_keys: the keys (bit = key 1..9) the player's open menu page takes; 0 = no menu
-	void SetMenuKeys(int slot, uint32 mask);
+	// zm_menu_keys: the keys (bit = key 1..9) the player's open menu page takes (per plugin); 0 = no menu
+	void SetMenuKeys(int slot, int source, uint32 mask);
 	void ResetPlayer(CPlayerSlot slot);
 } // namespace slotinput
