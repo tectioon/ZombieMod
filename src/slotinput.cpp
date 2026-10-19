@@ -25,7 +25,7 @@
 #include "tier0/memdbgon.h"
 
 CConVar<bool> g_cvarMenuSlotKeys("zm_menu_slotkeys", FCVAR_NONE, "Menu keys 1-9 without binds (fake weapons, see slotinput.cpp)", true);
-CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends, so CS2's weapon list and the wheel skip them", true);
+CConVar<bool> g_cvarMenuSlotKeysDormant("zm_menu_slotkeys_dormant", FCVAR_NONE, "Keep the menu-key fakes dormant on the owner's client after a few sends, so CS2's weapon list and the wheel skip them (crashed the owner's game twice on 2026-10-19)", false);
 
 namespace slotinput
 {
