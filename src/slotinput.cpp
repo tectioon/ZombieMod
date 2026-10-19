@@ -278,11 +278,20 @@ namespace slotinput
 			return mask;
 		}
 
+		// The key goes to every plugin whose open page takes it, each through its own server command
+		constexpr const char* kKeyCommands[kMenuSources] = {"es_menu_key", "mv_menu_key", "zm_menu_key_2", "zm_menu_key_3"};
+
 		void DeliverKey(int slot, int key)
 		{
-			char cmd[64];
-			V_snprintf(cmd, sizeof(cmd), "es_menu_key %d %d\n", slot, key);
-			g_pEngineServer2->ServerCommand(cmd);
+			for (int source = 0; source < kMenuSources; source++)
+			{
+				if (!(g_MenuKeys[slot][source] & (1u << key)))
+					continue;
+
+				char cmd[64];
+				V_snprintf(cmd, sizeof(cmd), "%s %d %d\n", kKeyCommands[source], slot, key);
+				g_pEngineServer2->ServerCommand(cmd);
+			}
 		}
 	} // namespace
 
@@ -521,7 +530,7 @@ namespace slotinput
 } // namespace slotinput
 
 // EconomyShopPlugin (source 0) / MapVotePlugin (1): the keys (bit = key 1..9) the player's open menu page takes; 0 = no
-// menu. es_menu_key goes to both plugins; each acts only on its own open menu.
+// menu. The keys come back as es_menu_key / mv_menu_key <slot> <key>.
 CON_COMMAND_F(zm_menu_keys, "<slot> <key mask> [source 0-3] - Menu keys 1-9 without binds for the open menu page", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
 {
 	if (args.ArgC() < 3)
