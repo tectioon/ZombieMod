@@ -61,6 +61,13 @@ jobs:
           path: mmsource-2.0
           submodules: recursive
 
+      # CS2 1.41.9.2 (2026-10-22) inserted IVEngineServer2::IsSpawnGroupLoadedForClient after MakeSpawnGroupActive,
+      # moving every later engine call (GetClientSteamID, GetServerGlobals, DisconnectClient, ...) one slot.
+      # Same line as alliedmodders/hl2sdk#438; drop this step once the sdk pin has it.
+      - name: Patch IVEngineServer2 vtable
+        shell: bash
+        run: python3 ZombieMod/.github/workflows/patch_eiface.py ZombieMod/sdk/public/eiface.h || python ZombieMod/.github/workflows/patch_eiface.py ZombieMod/sdk/public/eiface.h
+
       - name: Checkout AMBuild
         if: matrix.os == 'windows-latest'
         uses: actions/checkout@v7

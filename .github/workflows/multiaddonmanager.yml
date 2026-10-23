@@ -46,13 +46,34 @@ jobs:
           ref: 625bfd4e39816ad0e1eae3b3144a3b5425c5c7a0
           path: hl2sdk-cs2
 
-      - name: Apply the 2026-09-23 offsets
+      - name: Checkout this repo (SDK patch script)
+        uses: actions/checkout@v7
+        with:
+          path: ZombieMod
+          sparse-checkout: .github/workflows
+
+      # CS2 1.41.9.2 (2026-10-22): IVEngineServer2 got a new virtual (alliedmodders/hl2sdk#438)
+      - name: Patch IVEngineServer2 vtable
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_eiface.py hl2sdk-cs2/public/eiface.h
+
+      - name: Apply the 2026-09-23 offsets and the 2026-10-22 ReplyConnection signature
         working-directory: MultiAddonManager
         shell: bash
         run: |
           sed -i 's/g_iServerAddonsOffset = 344;/g_iServerAddonsOffset = 376;/; s/g_iClientListOffset = 584;/g_iClientListOffset = 616;/' src/multiaddonmanager.cpp
           grep -n "g_iServerAddonsOffset = 376;" src/multiaddonmanager.cpp
           grep -n "g_iClientListOffset = 616;" src/multiaddonmanager.cpp
+          # MAM upstream #79 (2026-10-22): the short Linux ReplyConnection signature no longer finds the right function
+          $(command -v python3 || command -v python) - <<'EOF'
+          p = "src/multiaddonmanager.cpp"
+          s = open(p).read()
+          old = r'g_ReplyConnection_Sig[] = "\x55\xB9\x2A\x2A\x2A\x2A\x41\xB8";'
+          new = r'g_ReplyConnection_Sig[] = "\x55\xB9\x2A\x2A\x2A\x2A\x41\xB8\x2A\x2A\x2A\x2A\x48\x89\xE5";'
+          assert s.count(old) == 1, "ReplyConnection sig"
+          open(p, "w").write(s.replace(old, new))
+          print("ReplyConnection sig extended")
+          EOF
 
       - name: Build
         working-directory: MultiAddonManager

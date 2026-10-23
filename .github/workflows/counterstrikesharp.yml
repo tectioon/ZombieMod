@@ -1,0 +1,54 @@
+name: CounterStrikeSharp (patched v1.0.374)
+
+# CounterStrikeSharp v1.0.374's native part rebuilt with the 2026-10-22 IVEngineServer2 fix (alliedmodders/hl2sdk#438).
+# CS2 1.41.9.2 inserted IsSpawnGroupLoadedForClient after MakeSpawnGroupActive, so the stock 1.0.374 build calls the
+# neighbouring engine function (GetClientSteamID returns 730, GetClientXUID lands on GetPlayerInfo) and crashes the
+# server. The server stays on 1.0.374 (1.0.375+ moved to KHook and broke our C# commands, see CLAUDE.md), so only
+# addons/counterstrikesharp/bin/linuxsteamrt64/counterstrikesharp.so from this artifact is deployed; the managed API
+# and gamedata stay as they are.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/counterstrikesharp.yml'
+
+jobs:
+  build:
+    name: Linux Build
+    runs-on: ubuntu-latest
+    container:
+      image: registry.gitlab.steamos.cloud/steamrt/sniper/sdk:latest
+    steps:
+      - name: Checkout CounterStrikeSharp v1.0.374
+        uses: actions/checkout@v7
+        with:
+          repository: roflmuffin/CounterStrikeSharp
+          ref: v1.0.374
+          path: CounterStrikeSharp
+          submodules: recursive
+
+      - name: Checkout this repo (SDK patch script)
+        uses: actions/checkout@v7
+        with:
+          path: ZombieMod
+          sparse-checkout: .github/workflows
+
+      - name: Patch IVEngineServer2 vtable
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_eiface.py CounterStrikeSharp/libraries/hl2sdk-cs2/public/eiface.h
+
+      - name: Build
+        working-directory: CounterStrikeSharp
+        shell: bash
+        run: |
+          mkdir -p build
+          cd build
+          cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+          cmake --build . --config Release -- -j16
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: CounterStrikeSharp-374-linux
+          path: CounterStrikeSharp/build/addons
