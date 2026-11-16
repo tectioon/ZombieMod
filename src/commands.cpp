@@ -32,6 +32,7 @@
 #include "entity/cparticlesystem.h"
 #include "entity/lights.h"
 #include "httpmanager.h"
+#include "lang.h"
 #include "leader.h"
 #include "networksystem/inetworkmessages.h"
 #include "playermanager.h"
@@ -353,17 +354,24 @@ void ClientPrintAll(int hud_dest, const char* msg, ...)
 	va_end(args);
 
 	INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("TextMsg");
-	auto data = pNetMsg->AllocateMessage()->ToPB<CUserMessageTextMsg>();
 
-	data->set_dest(hud_dest);
-	data->add_param(buf);
+	// One message per player since 2026-11-16, each in that player's language (lang.cpp)
+	for (int i = 0; GetGlobals() && i < GetGlobals()->maxClients; i++)
+	{
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
+		if (!pController || !pController->IsConnected() || pController->IsBot())
+			continue;
 
-	CRecipientFilter filter;
-	filter.AddAllPlayers();
+		std::string text = TranslateForSlot(i, buf);
+		auto data = pNetMsg->AllocateMessage()->ToPB<CUserMessageTextMsg>();
+		data->set_dest(hud_dest);
+		data->add_param(text.c_str());
 
-	g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
+		CSingleRecipientFilter filter(i);
+		g_gameEventSystem->PostEventAbstract(-1, false, &filter, pNetMsg, data, 0);
 
-	delete data;
+		delete data;
+	}
 
 	ConMsg("%s\n", StripUnprintable(buf, len).c_str());
 }
@@ -388,7 +396,7 @@ void ClientPrint(CCSPlayerController* player, int hud_dest, const char* msg, ...
 	auto data = pNetMsg->AllocateMessage()->ToPB<CUserMessageTextMsg>();
 
 	data->set_dest(hud_dest);
-	data->add_param(buf);
+	data->add_param(TranslateForSlot(player->GetPlayerSlot(), buf).c_str());
 
 	CSingleRecipientFilter filter(player->GetPlayerSlot());
 

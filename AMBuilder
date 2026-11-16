@@ -68,6 +68,7 @@ for sdk_target in MMSPlugin.sdk_targets:
 	'src/sphereentity.cpp',
 	'src/zombiemod.cpp',
 	'src/slotinput.cpp',
+	'src/lang.cpp',
     'src/customio.cpp',
     'src/entitylistener.cpp',
     'src/leader.cpp',
