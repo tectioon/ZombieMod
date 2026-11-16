@@ -68,6 +68,12 @@ jobs:
         shell: bash
         run: python3 ZombieMod/.github/workflows/patch_eiface.py ZombieMod/sdk/public/eiface.h || python ZombieMod/.github/workflows/patch_eiface.py ZombieMod/sdk/public/eiface.h
 
+      # CS2 1.41.9.7 (2026-11-12): INetworkMessageInternal became a plain NetMessageInfo_t and INetworkMessages
+      # lost four virtuals (hl2sdk 2283c1f9). Drop this step once the sdk pin has that.
+      - name: Patch net message layout
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_netmsg.py ZombieMod/sdk
+
       - name: Checkout AMBuild
         if: matrix.os == 'windows-latest'
         uses: actions/checkout@v7

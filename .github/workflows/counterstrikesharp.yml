@@ -38,6 +38,11 @@ jobs:
         shell: bash
         run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_eiface.py CounterStrikeSharp/libraries/hl2sdk-cs2/public/eiface.h
 
+      # CS2 1.41.9.7 (2026-11-12): INetworkMessageInternal became a plain NetMessageInfo_t (see patch_netmsg.py)
+      - name: Patch net message layout
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_netmsg.py CounterStrikeSharp/libraries/hl2sdk-cs2
+
       - name: Build
         working-directory: CounterStrikeSharp
         shell: bash

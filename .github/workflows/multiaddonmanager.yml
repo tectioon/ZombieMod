@@ -57,22 +57,28 @@ jobs:
         shell: bash
         run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_eiface.py hl2sdk-cs2/public/eiface.h
 
-      - name: Apply the 2026-09-23 offsets and the 2026-10-22 ReplyConnection signature
+      # CS2 1.41.9.7 (2026-11-12): INetworkMessageInternal became a plain NetMessageInfo_t (see patch_netmsg.py)
+      - name: Patch net message layout
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_netmsg.py hl2sdk-cs2
+
+      - name: Apply the 2026-09-23 offsets and the 2026-11-12 ReplyConnection signature
         working-directory: MultiAddonManager
         shell: bash
         run: |
           sed -i 's/g_iServerAddonsOffset = 344;/g_iServerAddonsOffset = 376;/; s/g_iClientListOffset = 584;/g_iClientListOffset = 616;/' src/multiaddonmanager.cpp
           grep -n "g_iServerAddonsOffset = 376;" src/multiaddonmanager.cpp
           grep -n "g_iClientListOffset = 616;" src/multiaddonmanager.cpp
-          # MAM upstream #79 (2026-10-22): the short Linux ReplyConnection signature no longer finds the right function
+          # Linux ReplyConnection signature: MAM upstream #79 for 2026-10-22, then upstream 7fc2d6f for 1.41.9.7
+          # (2026-11-12, the two mov's swapped: "55 41 B8 ? ? ? ? B9 ? ? ? ? 48 89 E5 41 57")
           $(command -v python3 || command -v python) - <<'EOF'
           p = "src/multiaddonmanager.cpp"
           s = open(p).read()
           old = r'g_ReplyConnection_Sig[] = "\x55\xB9\x2A\x2A\x2A\x2A\x41\xB8";'
-          new = r'g_ReplyConnection_Sig[] = "\x55\xB9\x2A\x2A\x2A\x2A\x41\xB8\x2A\x2A\x2A\x2A\x48\x89\xE5";'
+          new = r'g_ReplyConnection_Sig[] = "\x55\x41\xB8\x2A\x2A\x2A\x2A\xB9\x2A\x2A\x2A\x2A\x48\x89\xE5\x41\x57";'
           assert s.count(old) == 1, "ReplyConnection sig"
           open(p, "w").write(s.replace(old, new))
-          print("ReplyConnection sig extended")
+          print("ReplyConnection sig replaced")
           EOF
 
       - name: Build
