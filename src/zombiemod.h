@@ -36,7 +36,8 @@ extern CConVar<bool> g_cvarZMInfiniteAmmo;
 extern CConVar<int> g_cvarZMInfiniteAmmoTotal;
 extern CConVar<bool> g_cvarZMUserPresToFile;
 
-#define ZM_PREFIX " \4[DEZPINZM]\1 "
+// Every plugin's chat prefix is the host's name in GameSites blue since 2026-11-16
+#define ZM_PREFIX " \x0B[Gamesites.cz]\1 "
 
 enum class EZMRoundState
 {

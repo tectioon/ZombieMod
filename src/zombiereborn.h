@@ -31,7 +31,7 @@ using ordered_json = nlohmann::ordered_json;
 
 extern CConVar<bool> g_cvarEnableZR;
 
-#define ZR_PREFIX " \4[Zombie:Reborn]\1 "
+#define ZR_PREFIX " \x0B[Gamesites.cz]\1 "
 #define HUMAN_CLASS_KEY_NAME "zr_human_class"
 #define ZOMBIE_CLASS_KEY_NAME "zr_zombie_class"
 

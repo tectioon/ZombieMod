@@ -21,7 +21,7 @@
 
 #include "commands.h"
 
-#define TD_PREFIX " \4[TopDefender]\1 "
+#define TD_PREFIX " \x0B[Gamesites.cz]\1 "
 
 extern CConVar<bool> g_cvarEnableTopDefender;
 extern CConVar<CUtlString> g_cvarTopDefenderChatTag;

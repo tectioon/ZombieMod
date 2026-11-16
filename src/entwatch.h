@@ -33,7 +33,7 @@ class CCSPlayerPawn;
 extern CConVar<bool> g_cvarEnableEntWatch;
 extern CConVar<bool> g_cvarEnableEntwatchHud;
 
-#define EW_PREFIX " \4[EntWatch]\1 "
+#define EW_PREFIX " \x0B[Gamesites.cz]\1 "
 
 #define EW_PREF_HUD_MODE "entwatch_hud"
 #define EW_PREF_HUDPOS_X "entwatch_hudpos_x"
