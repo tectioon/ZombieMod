@@ -62,6 +62,7 @@ public:
 	SCHEMA_FIELD(float, m_flVelocityModifier)
 	SCHEMA_FIELD(CCSPlayer_ActionTrackingServices*, m_pActionTrackingServices)
 	SCHEMA_FIELD(QAngle, m_angEyeAngles)
+	SCHEMA_FIELD(int32_t, m_ArmorValue)
 
 	[[nodiscard]] CCSPlayer_CameraServices* GetCameraService()
 	{

@@ -81,6 +81,8 @@ CConVar<float> g_cvarZMInfectShakeAmplitude("zm_infect_shake_amp", FCVAR_NONE, "
 CConVar<float> g_cvarZMInfectShakeFrequency("zm_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
 CConVar<float> g_cvarZMInfectShakeDuration("zm_infect_shake_duration", FCVAR_NONE, "Duration of shaking effect", 5.0f, true, 0.0f, false, 0.0f);
 CConVar<int> g_cvarZMInfectSpawnMZRatio("zm_infect_spawn_mz_ratio", FCVAR_NONE, "Ratio of all Players to Mother Zombies to be spawned at round start", 7, true, 1, true, 64);
+CConVar<int> g_cvarZMArmorPerHit("zm_armor_per_hit", FCVAR_NONE, "Armor a zombie's knife hit takes off a human instead of infecting them (0 = armor doesn't protect)", 50, true, 0, false, 0);
+CConVar<CUtlString> g_cvarZMArmorHitSound("zm_armor_hit_sound", FCVAR_NONE, "Sound a human makes when a zombie's hit only takes armor", "frostg.vox.human.hurt");
 CConVar<int> g_cvarZMInfectSpawnMinCount("zm_infect_spawn_mz_min_count", FCVAR_NONE, "Minimum amount of Mother Zombies to be spawned at round start", 1, true, 0, false, 0);
 CConVar<int> g_cvarZMMZImmunityReduction("zm_mz_immunity_reduction", FCVAR_NONE, "How much mz immunity to reduce for each player per round (0-100)", 20, true, 0, true, 100);
 CConVar<float> g_cvarZMRespawnDelay("zm_respawn_delay", FCVAR_NONE, "Time before a zombie is automatically respawned, -1 disables this. Note that maps can still manually respawn at any time", 5.0f, true, -1.0f, false, 0.0f);
@@ -842,6 +844,18 @@ bool ZM_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPa
 		const char* pszAbilityClass = pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "";
 		if (pAttackerPawn->m_iTeamNum() == CS_TEAM_T && pVictimPawn->m_iTeamNum() == CS_TEAM_CT && !V_strncmp(pszAbilityClass, "weapon_knife", 12))
 		{
+			// Kevlar bought in EconomyShopPlugin's shop (2026-11-17): a zombie's knife hit takes zm_armor_per_hit of the
+			// human's armor instead of infecting them, and they cry out; once the armor is gone the next hit infects
+			int iArmor = pVictimPawn->m_ArmorValue();
+			if (iArmor > 0 && g_cvarZMArmorPerHit.Get() > 0)
+			{
+				int iLeft = iArmor - g_cvarZMArmorPerHit.Get();
+				pVictimPawn->m_ArmorValue = iLeft > 0 ? iLeft : 0;
+				if (g_cvarZMArmorHitSound.Get().Length() > 0)
+					pVictimPawn->EmitSound(g_cvarZMArmorHitSound.Get().String());
+				return true; // nullify the damage
+			}
+
 			char msg[256];
 
 			int times = 1;
