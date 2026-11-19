@@ -77,6 +77,7 @@ CConVar<bool> g_cvarZMInfectHudText("zm_infect_hud_text", FCVAR_NONE, "Whether t
 CConVar<float> g_cvarZMKnockbackScale("zm_knockback_scale", FCVAR_NONE, "Global knockback scale", 5.0f);
 CConVar<float> g_cvarZMMoanInterval("zm_sounds_moan_interval", FCVAR_NONE, "How often in seconds should zombies moan", 30.0f, true, 0.0f, false, 0.0f);
 CConVar<bool> g_cvarZMInfectShake("zm_infect_shake", FCVAR_NONE, "Whether to shake a player's view on infect", true);
+CConVar<bool> g_cvarZMHumanNoblock("zm_human_noblock", FCVAR_NONE, "Whether humans pass through each other (zombies stay solid to humans and to each other)", true);
 CConVar<float> g_cvarZMInfectShakeAmplitude("zm_infect_shake_amp", FCVAR_NONE, "Amplitude of shaking effect", 15.0f, true, 0.0f, true, 16.0f);
 CConVar<float> g_cvarZMInfectShakeFrequency("zm_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
 CConVar<float> g_cvarZMInfectShakeDuration("zm_infect_shake_duration", FCVAR_NONE, "Duration of shaking effect", 5.0f, true, 0.0f, false, 0.0f);
@@ -173,8 +174,50 @@ void ZM_Precache(IEntityResourceManifest* pResourceManifest)
 	pResourceManifest->AddResource(g_cvarBurnParticle.Get().String());
 }
 
+// Humans-only noblock (2026-11-19, user): mp_solid_teammates works for both teams at once, so instead every living human
+// interacts as an extra layer (bit 53, unused: CS2's layers end at index 39) and excludes that same layer. Two humans
+// exclude each other; a zombie never has the bit, so humans and zombies still collide, and zombies with each other.
+// Same mechanism as upstream's setinteraction test command. Re-applied every 0.2 s because a spawn or team change
+// rebuilds the pawn's collision attribute.
+static constexpr uint64 ZM_HUMAN_NOBLOCK_LAYER = (uint64)1 << 53;
+
+static void ZM_HumanNoblockTick()
+{
+	if (!GetGlobals())
+		return;
+
+	bool bEnabled = g_cvarZMEnable.Get() && g_cvarZMHumanNoblock.Get();
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
+	{
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
+		if (!pController || !pController->IsConnected())
+			continue;
+
+		CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+		if (!pPawn || !pPawn->m_pCollision())
+			continue;
+
+		bool bWant = bEnabled && pPawn->IsAlive() && pPawn->m_iTeamNum() == CS_TEAM_CT;
+		uint64 as = pPawn->m_pCollision->m_collisionAttribute().m_nInteractsAs;
+		uint64 exclude = pPawn->m_pCollision->m_collisionAttribute().m_nInteractsExclude;
+		uint64 newAs = bWant ? (as | ZM_HUMAN_NOBLOCK_LAYER) : (as & ~ZM_HUMAN_NOBLOCK_LAYER);
+		uint64 newExclude = bWant ? (exclude | ZM_HUMAN_NOBLOCK_LAYER) : (exclude & ~ZM_HUMAN_NOBLOCK_LAYER);
+		if (newAs == as && newExclude == exclude)
+			continue;
+
+		pPawn->m_pCollision->m_collisionAttribute().m_nInteractsAs = newAs;
+		pPawn->m_pCollision->m_collisionAttribute().m_nInteractsExclude = newExclude;
+		pPawn->CollisionRulesChanged();
+	}
+}
+
 void ZM_OnLevelInit()
 {
+	CTimer::Create(0.2f, TIMERFLAG_MAP, []() {
+		ZM_HumanNoblockTick();
+		return 0.2f;
+	});
+
 	g_ZMRoundState = EZMRoundState::ROUND_START;
 
 	// Delay one tick to override any .cfg's
