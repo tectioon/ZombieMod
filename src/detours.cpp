@@ -582,10 +582,42 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 	if ((iAllowDuckSpam == 1 || pPawn->m_iTeamNum() == iAllowDuckSpam) && pThis->m_flDuckSpeed() != 8.0f)
 		pThis->m_flDuckSpeed = 8.0f;
 
+	// Humans-only noblock (2026-11-20): the interaction-layer way (ZM_HumanNoblockTick) did nothing in game - the movement
+	// traces don't use the pawn's own InteractsExclude. CS2's own mp_solid_teammates is read during movement, so while a
+	// living human's movement runs it reads 0 (written straight into the value, so no change callback and no replication),
+	// and 1 again for everyone else: humans pass through humans, zombies stay solid to each other, and the two teams always
+	// block each other. EconomyShopPlugin replicates 0 to humans' clients and 1 to zombies' so prediction agrees.
+	static ConVarRefAbstract mp_solid_teammates("mp_solid_teammates");
+	CVValue_t* pSolidValue = nullptr;
+	bool bNoblock = g_cvarZMEnable.Get() && ZM_HumanNoblockMovement() && pPawn->m_iTeamNum() == CS_TEAM_CT
+					&& mp_solid_teammates.IsConVarDataValid() && (pSolidValue = mp_solid_teammates.GetConVarData()->ValueOrDefault(-1));
+	uint8 savedSolid[sizeof(CVValue_t)];
+	if (bNoblock)
+	{
+		memcpy(savedSolid, pSolidValue, sizeof(CVValue_t));
+		switch (mp_solid_teammates.GetType())
+		{
+			case EConVarType_Bool: pSolidValue->m_bValue = false; break;
+			case EConVarType_Int16: pSolidValue->m_i16Value = 0; break;
+			case EConVarType_UInt16: pSolidValue->m_u16Value = 0; break;
+			case EConVarType_Int32: pSolidValue->m_i32Value = 0; break;
+			case EConVarType_UInt32: pSolidValue->m_u32Value = 0; break;
+			case EConVarType_Int64: pSolidValue->m_i64Value = 0; break;
+			case EConVarType_UInt64: pSolidValue->m_u64Value = 0; break;
+			case EConVarType_Float32: pSolidValue->m_fl32Value = 0.f; break;
+			default: bNoblock = false; break;
+		}
+	}
+
 	float flSpeedMod = pController->GetZEPlayer()->GetSpeedMod();
 
 	if (flSpeedMod == 1.f)
-		return ProcessMovement(pThis, pMove);
+	{
+		ProcessMovement(pThis, pMove);
+		if (bNoblock)
+			memcpy(pSolidValue, savedSolid, sizeof(CVValue_t));
+		return;
+	}
 
 	// Yes, this is what source1 does to scale player speed
 	// Scale frametime during the entire movement processing step and revert right after
@@ -596,6 +628,8 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 	ProcessMovement(pThis, pMove);
 
 	GetGlobals()->frametime = flStoreFrametime;
+	if (bNoblock)
+		memcpy(pSolidValue, savedSolid, sizeof(CVValue_t));
 }
 
 CConVar<bool> g_cvarDisableSubtickMovement("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);

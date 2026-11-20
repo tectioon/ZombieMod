@@ -32,6 +32,7 @@
 using ordered_json = nlohmann::ordered_json;
 
 extern CConVar<bool> g_cvarZMEnable;
+bool ZM_HumanNoblockMovement();
 extern CConVar<bool> g_cvarZMInfiniteAmmo;
 extern CConVar<int> g_cvarZMInfiniteAmmoTotal;
 extern CConVar<bool> g_cvarZMUserPresToFile;

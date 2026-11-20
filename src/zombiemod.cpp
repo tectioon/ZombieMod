@@ -78,6 +78,8 @@ CConVar<float> g_cvarZMKnockbackScale("zm_knockback_scale", FCVAR_NONE, "Global 
 CConVar<float> g_cvarZMMoanInterval("zm_sounds_moan_interval", FCVAR_NONE, "How often in seconds should zombies moan", 30.0f, true, 0.0f, false, 0.0f);
 CConVar<bool> g_cvarZMInfectShake("zm_infect_shake", FCVAR_NONE, "Whether to shake a player's view on infect", true);
 CConVar<bool> g_cvarZMHumanNoblock("zm_human_noblock", FCVAR_NONE, "Whether humans pass through each other (zombies stay solid to humans and to each other)", true);
+CConVar<bool> g_cvarZMHumanNoblockLayer("zm_human_noblock_layer", FCVAR_NONE, "Old interaction-layer humans noblock (did nothing in game; the bit is cleared while off)", false);
+bool ZM_HumanNoblockMovement() { return g_cvarZMHumanNoblock.Get(); }
 CConVar<float> g_cvarZMInfectShakeAmplitude("zm_infect_shake_amp", FCVAR_NONE, "Amplitude of shaking effect", 15.0f, true, 0.0f, true, 16.0f);
 CConVar<float> g_cvarZMInfectShakeFrequency("zm_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
 CConVar<float> g_cvarZMInfectShakeDuration("zm_infect_shake_duration", FCVAR_NONE, "Duration of shaking effect", 5.0f, true, 0.0f, false, 0.0f);
@@ -186,7 +188,7 @@ static void ZM_HumanNoblockTick()
 	if (!GetGlobals())
 		return;
 
-	bool bEnabled = g_cvarZMEnable.Get() && g_cvarZMHumanNoblock.Get();
+	bool bEnabled = g_cvarZMEnable.Get() && g_cvarZMHumanNoblock.Get() && g_cvarZMHumanNoblockLayer.Get();
 	for (int i = 0; i < GetGlobals()->maxClients; i++)
 	{
 		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
