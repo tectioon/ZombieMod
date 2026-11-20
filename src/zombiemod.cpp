@@ -79,7 +79,8 @@ CConVar<float> g_cvarZMMoanInterval("zm_sounds_moan_interval", FCVAR_NONE, "How 
 CConVar<bool> g_cvarZMInfectShake("zm_infect_shake", FCVAR_NONE, "Whether to shake a player's view on infect", true);
 CConVar<bool> g_cvarZMHumanNoblock("zm_human_noblock", FCVAR_NONE, "Whether humans pass through each other (zombies stay solid to humans and to each other)", true);
 CConVar<bool> g_cvarZMHumanNoblockLayer("zm_human_noblock_layer", FCVAR_NONE, "Old interaction-layer humans noblock (did nothing in game; the bit is cleared while off)", false);
-bool ZM_HumanNoblockMovement() { return g_cvarZMHumanNoblock.Get(); }
+CConVar<int> g_cvarZMHumanNoblockMode("zm_human_noblock_mode", FCVAR_NONE, "Humans noblock ways, bit mask: 1 = mp_solid_teammates 0 during humans' movement, 2 = humans in collision group INTERACTIVE_DEBRIS (doesn't collide with itself)", 3, true, 0, true, 3);
+bool ZM_HumanNoblockMovement() { return g_cvarZMHumanNoblock.Get() && (g_cvarZMHumanNoblockMode.Get() & 1); }
 CConVar<float> g_cvarZMInfectShakeAmplitude("zm_infect_shake_amp", FCVAR_NONE, "Amplitude of shaking effect", 15.0f, true, 0.0f, true, 16.0f);
 CConVar<float> g_cvarZMInfectShakeFrequency("zm_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
 CConVar<float> g_cvarZMInfectShakeDuration("zm_infect_shake_duration", FCVAR_NONE, "Duration of shaking effect", 5.0f, true, 0.0f, false, 0.0f);
@@ -213,8 +214,88 @@ static void ZM_HumanNoblockTick()
 	}
 }
 
+// Second way (2026-11-20, user: the first two did nothing in game): a living human's pawn is put in collision group
+// INTERACTIVE_DEBRIS, which "collides with everything except other interactive debris or debris" - so humans pass through
+// humans and still collide with zombies (group PLAYER). Collision groups are what upstream's cs2f_noblock_enable (DEBRIS on
+// every player) uses, so they do decide player-vs-player in CS2. The pawn's own group is put back when it stops being a
+// living human. Re-applied every 0.2 s: a spawn resets the group.
+static uint8 g_iHumanNoblockOldGroup[MAXPLAYERS] = {};
+static bool g_bHumanNoblockGroupSet[MAXPLAYERS] = {};
+
+static void ZM_SetPawnCollisionGroup(CCSPlayerPawn* pPawn, uint8 group)
+{
+	pPawn->m_pCollision->m_CollisionGroup = group;
+	pPawn->m_pCollision->m_collisionAttribute().m_nCollisionGroup = group;
+	pPawn->CollisionRulesChanged();
+}
+
+static void ZM_HumanNoblockGroupTick()
+{
+	if (!GetGlobals())
+		return;
+
+	bool bEnabled = g_cvarZMEnable.Get() && g_cvarZMHumanNoblock.Get() && (g_cvarZMHumanNoblockMode.Get() & 2);
+	const uint8 groupNoblock = COLLISION_GROUP_INTERACTIVE_DEBRIS;
+	for (int i = 0; i < GetGlobals()->maxClients && i < MAXPLAYERS; i++)
+	{
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
+		CCSPlayerPawn* pPawn = pController && pController->IsConnected() ? pController->GetPlayerPawn() : nullptr;
+		if (!pPawn || !pPawn->m_pCollision())
+		{
+			g_bHumanNoblockGroupSet[i] = false;
+			continue;
+		}
+
+		bool bWant = bEnabled && pPawn->IsAlive() && pPawn->m_iTeamNum() == CS_TEAM_CT;
+		uint8 group = pPawn->m_pCollision->m_CollisionGroup;
+		if (bWant)
+		{
+			if (group == groupNoblock)
+				continue;
+			g_iHumanNoblockOldGroup[i] = group;
+			g_bHumanNoblockGroupSet[i] = true;
+			ZM_SetPawnCollisionGroup(pPawn, groupNoblock);
+		}
+		else if (g_bHumanNoblockGroupSet[i])
+		{
+			g_bHumanNoblockGroupSet[i] = false;
+			if (group == groupNoblock)
+				ZM_SetPawnCollisionGroup(pPawn, g_iHumanNoblockOldGroup[i] ? g_iHumanNoblockOldGroup[i] : (uint8)COLLISION_GROUP_PLAYER);
+		}
+	}
+}
+
+// Diagnostics for the noblock (2026-11-20): every pawn's team, collision group and interaction layers, so a server console
+// dump with mp_solid_teammates 0 / 1 shows what CS2 changes for teammates
+CON_COMMAND_F(zm_collision_dump, "Print every player pawn's collision group and interaction layers", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (!GetGlobals())
+		return;
+	static ConVarRefAbstract mp_solid_teammates("mp_solid_teammates");
+	ConMsg("zm_collision_dump: mp_solid_teammates %d, zm_human_noblock %d, mode %d\n", mp_solid_teammates.GetInt(), g_cvarZMHumanNoblock.Get() ? 1 : 0, g_cvarZMHumanNoblockMode.Get());
+	for (int i = 0; i < GetGlobals()->maxClients; i++)
+	{
+		CCSPlayerController* pController = CCSPlayerController::FromSlot(i);
+		if (!pController || !pController->IsConnected())
+			continue;
+		CCSPlayerPawn* pPawn = pController->GetPlayerPawn();
+		if (!pPawn || !pPawn->m_pCollision())
+			continue;
+		auto& attr = pPawn->m_pCollision->m_collisionAttribute();
+		ConMsg("  slot %d team %d alive %d group %d attrgroup %d solid %d as %llx with %llx exclude %llx  %s\n", i, (int)pPawn->m_iTeamNum(),
+			   pPawn->IsAlive() ? 1 : 0, (int)pPawn->m_pCollision->m_CollisionGroup(), (int)attr.m_nCollisionGroup(), (int)pPawn->m_pCollision->m_nSolidType(),
+			   (unsigned long long)attr.m_nInteractsAs(), (unsigned long long)attr.m_nInteractsWith(), (unsigned long long)attr.m_nInteractsExclude(),
+			   pController->GetPlayerName().c_str());
+	}
+}
+
 void ZM_OnLevelInit()
 {
+	CTimer::Create(0.2f, TIMERFLAG_MAP, []() {
+		ZM_HumanNoblockGroupTick();
+		return 0.2f;
+	});
+
 	CTimer::Create(0.2f, TIMERFLAG_MAP, []() {
 		ZM_HumanNoblockTick();
 		return 0.2f;
