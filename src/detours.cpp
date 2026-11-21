@@ -565,6 +565,50 @@ void* FASTCALL Detour_CNavMesh_GetNearestNavArea(int64_t unk1, float* unk2, unsi
 
 CConVar<int> g_cvarAllowDuckSpam("cs2f_allow_duck_spam", FCVAR_NONE, "Whether to allow duck spamming by removing the duck slowdown, clients will only partially predict [0 = disabled, 1 = both teams, 2 = T only, 3 = CT only]", 0, true, 0, true, CS_TEAM_CT);
 
+// Humans-only noblock (2026-11-21). server.dll (Windows, read with dumpbin): CCSPlayer_MovementServices vfunc 34 (run every
+// usercmd, SetupMove-like, BEFORE ProcessMovement) rebuilds the pawn's collision mask each tick and, unless mp_solid_teammates
+// is 1, adds the pawn's own team layer (T = bit 31, CT = bit 32) - so teammates stop colliding. The value is read live
+// (ConVarData + 0x58, int32). So while a living human's usercmds run, the value reads 0 (written straight into the value: no
+// change callback, no replication) and is put back right after; zombies keep 1, the teams always collide. The first try
+// (2026-11-20) only wrapped ProcessMovement and missed vfunc 34. EconomyShopPlugin replicates 0 to living humans' clients and
+// 1 to everyone else, so their prediction runs the same mask.
+struct ZM_SolidTeammatesOverride
+{
+	CVValue_t* m_pValue = nullptr;
+	uint8 m_saved[sizeof(CVValue_t)];
+
+	explicit ZM_SolidTeammatesOverride(CCSPlayerPawn* pPawn)
+	{
+		static ConVarRefAbstract mp_solid_teammates("mp_solid_teammates");
+		if (!pPawn || !g_cvarZMEnable.Get() || !ZM_HumanNoblockMovement() || !pPawn->IsAlive() || pPawn->m_iTeamNum() != CS_TEAM_CT
+			|| !mp_solid_teammates.IsConVarDataValid())
+			return;
+		CVValue_t* pValue = mp_solid_teammates.GetConVarData()->ValueOrDefault(-1);
+		if (!pValue)
+			return;
+		memcpy(m_saved, pValue, sizeof(CVValue_t));
+		switch (mp_solid_teammates.GetType())
+		{
+			case EConVarType_Bool: pValue->m_bValue = false; break;
+			case EConVarType_Int16: pValue->m_i16Value = 0; break;
+			case EConVarType_UInt16: pValue->m_u16Value = 0; break;
+			case EConVarType_Int32: pValue->m_i32Value = 0; break;
+			case EConVarType_UInt32: pValue->m_u32Value = 0; break;
+			case EConVarType_Int64: pValue->m_i64Value = 0; break;
+			case EConVarType_UInt64: pValue->m_u64Value = 0; break;
+			case EConVarType_Float32: pValue->m_fl32Value = 0.f; break;
+			default: return;
+		}
+		m_pValue = pValue;
+	}
+
+	~ZM_SolidTeammatesOverride()
+	{
+		if (m_pValue)
+			memcpy(m_pValue, m_saved, sizeof(CVValue_t));
+	}
+};
+
 void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pMove)
 {
 	CCSPlayerPawn* pPawn = pThis->GetPawn();
@@ -582,40 +626,13 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 	if ((iAllowDuckSpam == 1 || pPawn->m_iTeamNum() == iAllowDuckSpam) && pThis->m_flDuckSpeed() != 8.0f)
 		pThis->m_flDuckSpeed = 8.0f;
 
-	// Humans-only noblock (2026-11-20): the interaction-layer way (ZM_HumanNoblockTick) did nothing in game - the movement
-	// traces don't use the pawn's own InteractsExclude. CS2's own mp_solid_teammates is read during movement, so while a
-	// living human's movement runs it reads 0 (written straight into the value, so no change callback and no replication),
-	// and 1 again for everyone else: humans pass through humans, zombies stay solid to each other, and the two teams always
-	// block each other. EconomyShopPlugin replicates 0 to humans' clients and 1 to zombies' so prediction agrees.
-	static ConVarRefAbstract mp_solid_teammates("mp_solid_teammates");
-	CVValue_t* pSolidValue = nullptr;
-	bool bNoblock = g_cvarZMEnable.Get() && ZM_HumanNoblockMovement() && pPawn->m_iTeamNum() == CS_TEAM_CT
-					&& mp_solid_teammates.IsConVarDataValid() && (pSolidValue = mp_solid_teammates.GetConVarData()->ValueOrDefault(-1));
-	uint8 savedSolid[sizeof(CVValue_t)];
-	if (bNoblock)
-	{
-		memcpy(savedSolid, pSolidValue, sizeof(CVValue_t));
-		switch (mp_solid_teammates.GetType())
-		{
-			case EConVarType_Bool: pSolidValue->m_bValue = false; break;
-			case EConVarType_Int16: pSolidValue->m_i16Value = 0; break;
-			case EConVarType_UInt16: pSolidValue->m_u16Value = 0; break;
-			case EConVarType_Int32: pSolidValue->m_i32Value = 0; break;
-			case EConVarType_UInt32: pSolidValue->m_u32Value = 0; break;
-			case EConVarType_Int64: pSolidValue->m_i64Value = 0; break;
-			case EConVarType_UInt64: pSolidValue->m_u64Value = 0; break;
-			case EConVarType_Float32: pSolidValue->m_fl32Value = 0.f; break;
-			default: bNoblock = false; break;
-		}
-	}
+	ZM_SolidTeammatesOverride noblock(pPawn);
 
 	float flSpeedMod = pController->GetZEPlayer()->GetSpeedMod();
 
 	if (flSpeedMod == 1.f)
 	{
 		ProcessMovement(pThis, pMove);
-		if (bNoblock)
-			memcpy(pSolidValue, savedSolid, sizeof(CVValue_t));
 		return;
 	}
 
@@ -628,8 +645,6 @@ void FASTCALL Detour_ProcessMovement(CCSPlayer_MovementServices* pThis, void* pM
 	ProcessMovement(pThis, pMove);
 
 	GetGlobals()->frametime = flStoreFrametime;
-	if (bNoblock)
-		memcpy(pSolidValue, savedSolid, sizeof(CVValue_t));
 }
 
 CConVar<bool> g_cvarDisableSubtickMovement("cs2f_disable_subtick_move", FCVAR_NONE, "Whether to disable subtick movement", false);
@@ -818,6 +833,8 @@ void* FASTCALL Detour_ProcessUsercmds(CCSPlayerController* pController, CUserCmd
 
 	VPROF_SCOPE_END();
 
+	// Humans-only noblock: the whole usercmd run (SetupMove-like vfunc 34 + ProcessMovement), see ZM_SolidTeammatesOverride
+	ZM_SolidTeammatesOverride noblock(pController ? pController->GetPlayerPawn() : nullptr);
 	return ProcessUsercmds(pController, cmds, numcmds, paused, margin);
 }
 

@@ -79,7 +79,7 @@ CConVar<float> g_cvarZMMoanInterval("zm_sounds_moan_interval", FCVAR_NONE, "How 
 CConVar<bool> g_cvarZMInfectShake("zm_infect_shake", FCVAR_NONE, "Whether to shake a player's view on infect", true);
 CConVar<bool> g_cvarZMHumanNoblock("zm_human_noblock", FCVAR_NONE, "Whether humans pass through each other (zombies stay solid to humans and to each other)", true);
 CConVar<bool> g_cvarZMHumanNoblockLayer("zm_human_noblock_layer", FCVAR_NONE, "Old interaction-layer humans noblock (did nothing in game; the bit is cleared while off)", false);
-CConVar<int> g_cvarZMHumanNoblockMode("zm_human_noblock_mode", FCVAR_NONE, "Humans noblock ways, bit mask: 1 = mp_solid_teammates 0 during humans' movement, 2 = humans in collision group INTERACTIVE_DEBRIS (doesn't collide with itself)", 3, true, 0, true, 3);
+CConVar<int> g_cvarZMHumanNoblockMode("zm_human_noblock_mode", FCVAR_NONE, "Humans noblock ways, bit mask: 1 = mp_solid_teammates 0 during humans' movement, 2 = humans in collision group INTERACTIVE_DEBRIS (made humans non-solid to zombies too - don't use)", 1, true, 0, true, 3);
 bool ZM_HumanNoblockMovement() { return g_cvarZMHumanNoblock.Get() && (g_cvarZMHumanNoblockMode.Get() & 1); }
 CConVar<float> g_cvarZMInfectShakeAmplitude("zm_infect_shake_amp", FCVAR_NONE, "Amplitude of shaking effect", 15.0f, true, 0.0f, true, 16.0f);
 CConVar<float> g_cvarZMInfectShakeFrequency("zm_infect_shake_frequency", FCVAR_NONE, "Frequency of shaking effect", 2.0f, true, 0.0f, false, 0.0f);
