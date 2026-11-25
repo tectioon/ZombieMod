@@ -62,6 +62,12 @@ jobs:
         shell: bash
         run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_netmsg.py hl2sdk-cs2
 
+      # CS2 1.42.0.1 (2026-11-24): a new ISource2Server virtual after GameCreateNetworkStringTables moved every later
+      # ISource2Server slot (GameFrame hooks landed on ApplyGameSettings -> segfault on map load). Drop once the pin has s2sdk#128.
+      - name: Patch ISource2Server vtable
+        shell: bash
+        run: $(command -v python3 || command -v python) ZombieMod/.github/workflows/patch_source2server.py hl2sdk-cs2
+
       - name: Apply the 2026-09-23 offsets and the 2026-11-12 ReplyConnection signature
         working-directory: MultiAddonManager
         shell: bash
