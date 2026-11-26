@@ -2658,6 +2658,30 @@ CON_COMMAND_F(zm_owner_particle, "<player_slot> <effect> <x> <y> <z> [lifetime] 
 	});
 }
 
+// For EconomyShopPlugin's snow (2026-11-26): an info_particle_system the plugin created itself (parented to a player's pawn)
+// is hidden from everyone except that player from now on, through the same list as zm_owner_particle. Otherwise everyone
+// would also see the snow of every other player standing near them.
+CON_COMMAND_F(zm_owner_only, "<entity_index> <player_slot> - Hide an info_particle_system from everyone except one player", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 3)
+	{
+		ConMsg("zm_owner_only: usage: zm_owner_only <entity_index> <player_slot>\n");
+		return;
+	}
+
+	int iIndex = V_StringToInt32(args[1], -1);
+	int iSlot = V_StringToInt32(args[2], -1);
+	if (iIndex <= 0 || iIndex >= MAX_EDICTS || iSlot < 0 || iSlot >= MAXPLAYERS)
+		return;
+
+	CBaseEntity* pEnt = (CBaseEntity*)g_pEntitySystem->GetEntityInstance(CEntityIndex(iIndex));
+	if (!pEnt || V_strcmp(pEnt->GetClassname(), "info_particle_system"))
+		return;
+
+	std::erase_if(g_vecOwnerOnlyParticles, [](const HeldParticle_t& owned) { return !owned.hParticle.Get(); });
+	g_vecOwnerOnlyParticles.push_back({((CParticleSystem*)pEnt)->GetHandle(), iSlot, true});
+}
+
 static void KillHeldParticleLater(CParticleSystem* pParticle)
 {
 	// Outlives the ~1s re-send interval a little so consecutive flames overlap instead of flickering.
