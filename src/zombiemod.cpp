@@ -347,6 +347,23 @@ void ZM_RespawnAll()
 	}
 }
 
+// EconomyShopPlugin's Nemesis mode (2026-11-27): the Nemesis' knife kills instead of infecting (armor doesn't help), and
+// nobody respawns for the rest of that round - killed humans watch until it ends, a dead Nemesis stays dead (zombies
+// respawn only while g_bRespawnEnabled). Set with zm_set_nemesis <slot> once the Nemesis is picked; reset every round.
+static int g_iZMNemesisSlot = -1;
+
+CON_COMMAND_F(zm_set_nemesis, "<player_slot|-1> - The Nemesis of this round (its knife kills, no respawns), -1 = none", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+	{
+		ConMsg("zm_set_nemesis: usage: zm_set_nemesis <player_slot|-1>\n");
+		return;
+	}
+	g_iZMNemesisSlot = V_StringToInt32(args[1], -1);
+	if (g_iZMNemesisSlot >= 0)
+		g_bRespawnEnabled = false;
+}
+
 void ZM_ToggleRespawn(bool force = false, bool value = false)
 {
 	if ((!force && !g_bRespawnEnabled) || (force && value))
@@ -363,6 +380,7 @@ void ZM_ToggleRespawn(bool force = false, bool value = false)
 
 void ZM_OnRoundPrestart(IGameEvent* pEvent)
 {
+	g_iZMNemesisSlot = -1;
 	// Gamerules may not be available earlier, so easiest to just enforce this here
 	if (g_pGameRules)
 	{
@@ -970,6 +988,13 @@ bool ZM_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPa
 		const char* pszAbilityClass = pInfo->m_hAbility.Get() ? pInfo->m_hAbility.Get()->GetClassname() : "";
 		if (pAttackerPawn->m_iTeamNum() == CS_TEAM_T && pVictimPawn->m_iTeamNum() == CS_TEAM_CT && !V_strncmp(pszAbilityClass, "weapon_knife", 12))
 		{
+			// The Nemesis kills outright (zm_set_nemesis): the hit goes through as lethal damage instead of an infection
+			if (g_iZMNemesisSlot >= 0 && pAttackerController && pAttackerController->GetPlayerSlot() == g_iZMNemesisSlot)
+			{
+				pInfo->m_flDamage = 100000.0f;
+				return false;
+			}
+
 			// Kevlar bought in EconomyShopPlugin's shop (2026-11-17): a zombie's knife hit takes zm_armor_per_hit of the
 			// human's armor instead of infecting them, and they cry out; once the armor is gone the next hit infects
 			int iArmor = pVictimPawn->m_ArmorValue();
