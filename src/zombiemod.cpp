@@ -989,10 +989,24 @@ bool ZM_Hook_OnTakeDamage_Alive(CTakeDamageInfo* pInfo, CCSPlayerPawn* pVictimPa
 		if (pAttackerPawn->m_iTeamNum() == CS_TEAM_T && pVictimPawn->m_iTeamNum() == CS_TEAM_CT && !V_strncmp(pszAbilityClass, "weapon_knife", 12))
 		{
 			// The Nemesis kills outright (zm_set_nemesis): the hit goes through as lethal damage instead of an infection
+			// Raising this hit's m_flDamage didn't work (2026-11-28: the hit still took the knife's ~50 HP / armor), so the hit is
+			// nullified and a separate lethal hit goes in right after, the zm_deal_damage way (no ability, so it doesn't come back
+			// here as a knife hit), with the armor zeroed first
 			if (g_iZMNemesisSlot >= 0 && pAttackerController && pAttackerController->GetPlayerSlot() == g_iZMNemesisSlot)
 			{
-				pInfo->m_flDamage = 100000.0f;
-				return false;
+				CHandle<CCSPlayerPawn> hVictim = pVictimPawn->GetHandle();
+				CHandle<CCSPlayerPawn> hAttacker = pAttackerPawn->GetHandle();
+				CTimer::Create(0.0f, TIMERFLAG_MAP | TIMERFLAG_ROUND, [hVictim, hAttacker]() {
+					CCSPlayerPawn* pVictim = hVictim.Get();
+					CCSPlayerPawn* pAttacker = hAttacker.Get();
+					if (!pVictim || !pVictim->IsAlive() || !pAttacker)
+						return -1.0f;
+					pVictim->m_ArmorValue = 0;
+					CTakeDamageInfo info(pAttacker, pAttacker, nullptr, 100000.0f, DMG_SLASH);
+					pVictim->TakeDamage(info);
+					return -1.0f;
+				});
+				return true; // nullify this hit; the lethal one follows
 			}
 
 			// Kevlar bought in EconomyShopPlugin's shop (2026-11-17): a zombie's knife hit takes zm_armor_per_hit of the
